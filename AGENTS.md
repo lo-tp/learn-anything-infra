@@ -175,6 +175,26 @@ resources found` is the expected state, not a failure. Nodes appear when a
 workload schedules, and disappear again. The managed namespaces
 (`gke-gmp-system`, `gke-managed-cim`, …) exist without any node in sight.
 
+## Container images
+
+Each app's image is built in its own repository and smoke-tested there, then pinned
+here by digest: an image that never answered a request never gets a tag, because the
+workflows publish **after** the smoke step, not before. A smoke step is the image's
+contract written as a step — run the artifact, assert its first route (`/health`, the
+auth redirect to `/en/login`, `/api/compile`). It is worth having on the failure it
+catches rather than the one it confirms: on this project it found a production
+`npm ci` killed by a devDependency's `prepare` hook, and a working directory the app
+user could not write to (`COPY --chown` reaches copied paths, not the directory
+`WORKDIR` made). Images use a **numeric** `USER`: `runAsNonRoot` is checked
+numerically, so `USER app` fails the pod with `CreateContainerConfigError`. If a
+service writes at runtime, its working directory must be writable by that uid.
+
+When pinning, the overlay's `images:` entry must name the image **as base declares
+it** — the fully-qualified registry path, not the short name. A short name matches
+nothing, kustomize leaves the base `:placeholder` in place, `kubectl apply` reports
+`unchanged`, and a deploy that changed nothing looks like a deploy that changed
+nothing because it was already right.
+
 ## Terraform operation
 
 An interrupted `terraform apply` on this root is recoverable but not silently:

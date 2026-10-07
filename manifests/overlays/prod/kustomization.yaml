@@ -36,6 +36,23 @@ patches:
 images:
   - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-backend
     digest: sha256:dd32533ac7d83b47731e4e7c92e8c75a235e8cf9330b47005da6fee9a65c1d8f  # sha-fdb0b377 (CI, fdb0b377)
+  # The frontend and sandbox images come from their own repositories' Actions runs.
+  # Their workflows' smoke steps are the gate that matters for these two: the
+  # frontend must redirect an anonymous visitor and render a page whose text comes
+  # from its `messages/` copy; the sandbox must answer `/api/compile`. Both checks
+  # found real bugs in the image — a devDependency's lifecycle hook killing the
+  # production install, and a working directory the process could not write to.
+  # The `name:` here is the fully-qualified string as base declares it, the same
+  # shape as the backend entry above; a short name would match nothing and the
+  # render would keep the `:placeholder` (which is what the first version of these
+  # two entries did, and the deploy reported no change at all).
+  - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-frontend
+    digest: sha256:c04e93b7c150c5953c72be0687871a55d6864d0f09ee67edeb26c0fc34b48f99  # sha-e3362e7c (CI)
+    # No `newApiBase` override anywhere: see manifests/base/frontend.yaml. Pointing
+    # the browser at a staging surface is a new image built with that origin, not a
+    # manifest change.
+  - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-sandbox
+    digest: sha256:e2f55bcd2393c9f68c1cebbe34bd433c63ab9a29623b4b0ebedee43a3e7b88ac  # sha-84e610c9 (CI)
 configMapGenerator:
   # Consumed by the backend only (the frontend has no runtime config; the sandbox
   # has its own). These are origins, not secrets: what the browser is told to call

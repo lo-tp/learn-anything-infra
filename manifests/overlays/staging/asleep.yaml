@@ -1,0 +1,29 @@
+# Frontend and sandbox: zero replicas in staging too, for two reasons that are not
+# the prod one.
+#
+#   * Neither image exists for staging yet. The frontend bakes its API and sandbox
+#     origins at build time (its Dockerfile's build args), so a staging frontend is
+#     a *different image*, built with the staging hostnames — which do not exist
+#     until M6 declares them. The base manifests carry a `:placeholder` tag for
+#     both, and a pod pointed at that tag spends its life in ImagePullBackOff while
+#     Autopilot bills its requests.
+#   * There is no staging hostname to reach them through anyway.
+#
+# What this does not mean: staging cannot be exercised. `kubectl scale deployment
+# /backend -n staging --replicas=1` plus the in-cluster addresses in the two
+# ConfigMaps is how the internal calls get tested (the plan's M3 gate), and the
+# API is reachable by port-forward. When staging gets its own surfaces and its own
+# images, this patch is the thing that comes off.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox
+spec:
+  replicas: 0

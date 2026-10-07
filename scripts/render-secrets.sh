@@ -43,6 +43,11 @@ declare -A TARGETS=(
   [database-env]="POSTGRES_PASSWORD=db-password PGPASSWORD=db-password"
   [sandbox-env]="SANDBOX_SERVICE_TOKEN=sandbox-service-token"
   [backend-env]="JWT_SECRET=jwt-secret OPENAI_API_KEY=openai-api-key SANDBOX_SERVICE_TOKEN=sandbox-service-token"
+  # The frontend needs exactly one secret: proxy.ts verifies the sign-in cookie with
+  # the same JWT signing key the backend issues it with, which is why it is the same
+  # Secret Manager entry and not a second one. Its NEXT_PUBLIC_* values are build
+  # arguments baked into the image, so they are deliberately absent here.
+  [frontend-env]="JWT_SECRET=jwt-secret"
 )
 
 # The backend wants one URL, `DATABASE_URL`, and names no driver in it: the app
@@ -101,12 +106,23 @@ for target in "${targets[@]}"; do
     literal_args+=("--from-literal=DATABASE_URL=postgresql://${DB_USER}:${password}@${DB_HOST}:5432/${DB_NAME}")
   fi
 
-  # Build the object client-side, then apply it with a *server* dry-run first:
-  # `create --dry-run=server` would refuse an object that already exists, which is
-  # exactly the re-run case this script has to survive. Server validation still
-  # happens, on the path that is allowed to update.
-  kubectl -n "$namespace" create secret generic "$target" \
-    "${literal_args[@]}" \
-    --dry-run=client -o yaml | kubectl apply --dry-run=server -f -
+  rendered="$(kubectl -n "$namespace" create secret generic "$target" \
+    "${literal_args[@]}" --dry-run=client -o yaml)"
+
+  if [ "${CHECK_ONLY:-0}" = "1" ]; then
+    # Validation without writing. `create --dry-run=server` would refuse an object
+    # that already exists, which is exactly the re-run case, so the validating path
+    # is an apply with a server dry-run.
+    printf '%s\n' "$rendered" | kubectl apply --dry-run=server -f - >/dev/null
+    echo "validated $target in namespace '$namespace' (CHECK_ONLY=1: nothing written)" >&2
+    continue
+  fi
+
+  # `apply`, not `create`: a re-run has to update the object instead of refusing it,
+  # because that is how a rotated Secret Manager value gets as far as the cluster.
+  # It gets no further than the object on its own — a running container keeps the
+  # environment it started with, so a rotation only reaches a pod when that pod is
+  # replaced (`kubectl rollout restart`, or the next `make deploy`).
+  printf '%s\n' "$rendered" | kubectl apply -f -
   echo "rendered $target in namespace '$namespace' (${#literal_args[@]} args)" >&2
 done

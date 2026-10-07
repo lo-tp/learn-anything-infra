@@ -1,13 +1,16 @@
 # Frontend and sandbox: zero replicas.
 
-# Two separate reasons point at the same number, so the patch is one file rather
-# than two.
+# Both images now exist and are pinned in `kustomization.yaml` next to this file,
+# so the number here has one reason left, and it is the design reason: these two
+# tiers are meant to be at zero when nobody is using them (ADR 0001, and the
+# scale-from-zero choice at PLAN.md M3, option A). Until KEDA's ScaledObjects are
+# installed there is nothing to wake them, so a replica here would be a paying pod
+# that no request can reach — Autopilot bills a scheduled pod's requests whether or
+# not anything talks to it.
 #
-#   * Right now their images do not exist (M2 has not built them), so a pod here
-#     would sit in ImagePullBackOff and still be billed: Autopilot charges a
-#     scheduled pod's requests whether or not its container ever starts.
-#   * In the intended design they are also meant to be at zero when nobody is
-#     using them (ADR 0001, and the scale-from-zero choice at PLAN.md M3).
+# The consequence worth stating out loud: with these at zero, **the product's UI
+# and sandbox are not reachable yet**. The API is, and the data is. What is missing
+# is the wake-up mechanism, not the artifacts.
 #
 # So this is not a workaround standing in for the design; it is the design's idle
 # state, arrived at early. When KEDA's ScaledObjects land, they take over this

@@ -18,6 +18,12 @@ patches:
   - path: database-zero.yaml
   - path: db-backup-suspend.yaml
 
+  # The UI and sandbox tiers sleep here as well, and for a different reason than
+  # they do in prod: no staging image exists for either. No `images:` block below,
+  # because the base's `:placeholder` tag is not something to pin over until the
+  # staging hostnames (M6) and the images built with them exist.
+  - path: asleep.yaml
+
 configMapGenerator:
   # Staging has no public hostname (M6 gives prod one). Everything here is the
   # in-cluster address, which is also what makes staging usable as a place to test
