@@ -51,5 +51,8 @@ resource "google_container_cluster" "main" {
   # incidental `terraform destroy` is not a mistake worth making once.
   deletion_protection = true
 
-  depends_on = [google_project_iam_member.gke_nodes]
+  depends_on = [
+    google_project_iam_member.gke_nodes,
+    google_project_service.required,
+  ]
 }

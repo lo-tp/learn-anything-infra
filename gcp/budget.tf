@@ -38,6 +38,10 @@ resource "google_billing_budget" "platform" {
 
   # No all_updates_rule: default recipients are the Billing Account Users and
   # Administrators, and on this account that is you.
+
+  # Budgets need both the Billing Budgets API and a grant on the billing account
+  # itself (see iam.tf); neither is implied by the project.
+  depends_on = [google_project_service.required, google_billing_account_iam_member.terraform_local_budgets]
 }
 
 # 2. The canary: unfiltered, so it covers any project that shows up on the
@@ -47,6 +51,8 @@ resource "google_billing_budget" "platform" {
 resource "google_billing_budget" "account_canary" {
   billing_account = var.billing_account_id
   display_name    = "canary: anything on this billing account outside the plan"
+
+  depends_on = [google_project_service.required, google_billing_account_iam_member.terraform_local_budgets]
 
   budget_filter {
     calendar_period        = "MONTH"

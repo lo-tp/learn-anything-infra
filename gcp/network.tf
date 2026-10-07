@@ -2,6 +2,8 @@ resource "google_compute_network" "main" {
   name                    = "learn-anything"
   auto_create_subnetworks = false
   routing_mode            = "REGIONAL"
+
+  depends_on = [google_project_service.required]
 }
 
 # VPC-native is required for Autopilot: pods and services get secondary ranges

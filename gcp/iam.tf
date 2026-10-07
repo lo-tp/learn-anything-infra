@@ -11,6 +11,7 @@ locals {
     "roles/serviceusage.serviceUsageAdmin"  = "enabling APIs"
     "roles/iam.serviceAccountAdmin"         = "the CI and node identities"
     "roles/iam.serviceAccountUser"          = "granting those to workloads"
+    "roles/iam.workloadIdentityPoolAdmin"   = "the GitHub workload identity pool and providers"
     "roles/resourcemanager.projectIamAdmin" = "GKE grants roles to its own agents"
   }
 
@@ -53,4 +54,18 @@ resource "google_project_iam_binding" "project_owner" {
 resource "google_service_account" "terraform_local" {
   account_id   = "terraform-local"
   display_name = "Terraform, run from a laptop"
+}
+
+# Budgets are not a project resource: they hang off the billing account, so the
+# principal that manages them needs a grant there as well. `roles/billing.budgetsWriter`
+# sounds like the right role and Google refuses it at the billing-account level
+# ("Role roles/billing.budgetsWriter is not supported for this resource");
+# `roles/billing.admin` is the narrowest role that is accepted there and lets a
+# principal create and read budgets. It is a little wider than wanted — it can
+# also see payment instruments — and it stays with the laptop identity rather than
+# CI, because budgets are not something a pipeline should be rewriting on push.
+resource "google_billing_account_iam_member" "terraform_local_budgets" {
+  billing_account_id = var.billing_account_id
+  member             = "serviceAccount:${google_service_account.terraform_local.email}"
+  role               = "roles/billing.admin"
 }

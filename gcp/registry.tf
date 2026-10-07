@@ -3,6 +3,8 @@ resource "google_artifact_registry_repository" "images" {
   repository_id = "learn-anything"
   format        = "DOCKER"
 
+  depends_on = [google_project_service.required]
+
   # Tag retention is a cost control, not housekeeping: unbounded image history is
   # storage that bills quietly next to the things we are trying to afford. Keep
   # the 20 most recent versions per image — enough to roll back a deploy, not
