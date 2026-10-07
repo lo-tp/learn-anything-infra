@@ -13,11 +13,17 @@ Terraform deliberately does not create: the DNS records
 
 The Google Cloud SDK **is** installed (`google-cloud-sdk/` in this working tree,
 gitignored, and better placed outside the repo). Its permitted jobs are
-**identity, tooling, and reading**: signing a human or workload in, installing
-components such as `gke-gcloud-auth-plugin`, `docker-credential-gcloud` for
-local image pushes, and inspecting what exists. It is never the thing that
-creates or changes a resource: if a `gcloud` command would make something exist
-in the cloud, that something belongs in Terraform instead.
+**identity, tooling, reading, and one bootstrap grant**: signing a human or
+workload in, installing components such as `gke-gcloud-auth-plugin`,
+`docker-credential-gcloud` for local image pushes, inspecting what exists, and the
+single `add-iam-policy-binding` that gave `terraform-local` its first permission —
+no other identity could have made it. It is never the thing that creates or
+changes a resource: if a `gcloud` command would make something exist in the cloud,
+that something belongs in Terraform instead. When a bootstrap act does touch the
+cloud, this file and `PLAN.md` say so, so it is not mistaken for drift.
+
+Never run `gcloud auth application-default login` here: it would silently repoint
+Terraform from `terraform-local` to a human identity. Use `gcloud auth login`.
 
 Three documents carry the rest, each reached by its own condition:
 

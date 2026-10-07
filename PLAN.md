@@ -38,17 +38,32 @@ foundation. The *why* behind each load-bearing choice lives in
 1. ~~Create the GitHub repo `lo-tp/learn-anything-infra`, add it as `origin`,
    push.~~ **Done** — `github.com/lo-tp/learn-anything-infra` (private), `origin`
    set, `main` pushed. No pipeline in this plan can run before this.
-2. ~~Sign up for the trial, create the project.~~ **Partly done** — the project
-   exists: `learn-anything-510905` (number `358071090957`). Still yours: the
-   **billing account ID** and the **trial expiry date**, which starts the 90-day
-   clock M10 measures. With the ID, Terraform attaches billing; enabling APIs is
-   Terraform's job (M1).
-3. Create the service account Terraform will act as, and **grant it its roles by
-   hand — this is the one permission list you do in a console**:
+2. ~~Sign up for the trial, create the project, find the billing account ID.~~
+   **Done except one number.** Project `learn-anything-510905` (number
+   `358071090957`); billing account **`01C0D4-4C9481-8E0DC4`** ("My Billing
+   Account", open), read with `gcloud billing accounts list` once you were signed
+   in. **Still yours: the trial expiry date.** The Billing API does not expose
+   credit expiry — `billing accounts describe` returns no create time and no
+   credit fields — so that one value only exists on the Credits page in the
+   console. Without it the 90-day limit in M10 has no start.
+3. ~~Create the service account Terraform will act as, and grant it its roles by
+   hand.~~ **Done as far as a human can.** `terraform-local` was created, its key
+   moved out of the repo (`~/.config/gcp/learn-anything-510905.json`, mode 600),
+   and the one bootstrap grant a human identity alone can make is attached and
+   verified:
 
    ```
-   terraform-local@learn-anything-510905.iam.gserviceaccount.com
+   gcloud projects add-iam-policy-binding learn-anything-510905 \
+     --member serviceAccount:terraform-local@learn-anything-510905.iam.gserviceaccount.com \
+     --role roles/owner
+   ```
 
+   The eleven granular bindings below are now **mine, in Terraform**, in M1 —
+   role bindings are configuration, and a `gcloud` grant would leave them invisible
+   to `terraform plan` and untraceable to anyone reading this repo. `owner` gets
+   removed in the same change. The two billing-account roles stay a question:
+   a trial account may refuse a service account there, and if it does the budgets
+   move to hand-applied, the way ADR 0004 handles DNS.
    roles/container.admin                      GKE
    roles/compute.networkAdmin                 the VPC and subnetwork
    roles/artifactregistry.admin               image repository
@@ -91,13 +106,26 @@ setting, separate from the shell's.
 Terraform and `kubectl` must go through the local HTTP proxy; see *Network* in
 [`AGENTS.md`](./AGENTS.md), and `make tf-plan` / `make tf-apply` set it for you.
 
-**Done when:** the roles above are attached and `make tf-plan` reports the
-resources Terraform intends to create — including the APIs it enables itself,
-since the project currently answers `accessNotConfigured` for Cloud Resource
-Manager and Cloud Billing. No resource in this plan is created by a `gcloud`
-command; `gcloud` signs identities in, installs components, and reads.
+**Status: Step 0 is complete except the trial expiry date.** `bootstrap/` has
+been applied: `learn-anything-tfstate` exists in `ASIA-EAST2`, and reading it back
+from the API confirms `versioning_enabled: true`, `public_access_prevention:
+enforced`, `uniform_bucket_level_access: true`. Its outputs print the `backend
+"gcs"` block that `gcp/` will use.
+
+Two APIs — `cloudbilling` and `cloudresourcemanager` — were enabled during this
+bootstrap because the bootstrap could not read or grant anything without them.
+That is **not drift**: `google_project_service` in M1 declares them too, and
+declaring an already-enabled service is a no-op.
+
+**Done when:** the expiry date is recorded here. Everything else in this step is
+verifiable in the outputs above.
 
 ## M1 — Terraform foundation
+
+**M1 begins by importing the project**, because it was created by hand in Step 0:
+`terraform import google_project.main learn-anything-510905`. Until that is done
+Terraform cannot attach billing or set project settings, and the project sits
+outside the one place everything else is described.
 
 Two roots, decided by where state lives: **`bootstrap/`** creates one thing — the
 versioned GCS bucket that holds Terraform state — and keeps its own local state,
