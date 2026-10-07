@@ -11,10 +11,16 @@ foundation. The *why* behind each load-bearing choice lives in
 
 ## Inputs that hold this shape
 
-- **GCP, `asia-east2`.** The $300 / 90-day trial credit is the binding
-  constraint: **platform spend must stay under ~$3.33/day (~$100/month)** for the
-  whole 90 days. Design target I'd hold myself to: **platform ≤ $35/month**, rest
-  is headroom for egress and mistakes.
+- **GCP, `asia-east2`.** The binding constraint is a dated one: **the $300 trial
+  credit expires 2027-01-06** (billing account `01C0D4-4C9481-8E0DC4`), which
+  implies a trial start of 2026-10-08 and leaves **91 days from 2026-10-07**.
+  That makes the hard ceiling **$3.30/day for the platform** — not the earlier
+  ~$3.33 estimate — and the design target I hold myself to is **platform
+  ≤ $35/month**, the rest headroom for egress and mistakes.
+- **The credit belongs to the billing account, not to this project.** Anything
+  else running on `01C0D4-4C9481-8E0DC4` drains the same pot, so M1 creates two
+  budgets: one filtered to this project (what the platform actually costs) and one
+  unfiltered at account level (what is left of the credit).
 - **Inference is outside that budget.** You said the LLM/API spend is not counted
   against the 300-credit figure, so no milestone here caps it — but M8 measures it
   anyway, because it is the largest real cost and the platform budget says nothing
@@ -106,8 +112,9 @@ setting, separate from the shell's.
 Terraform and `kubectl` must go through the local HTTP proxy; see *Network* in
 [`AGENTS.md`](./AGENTS.md), and `make tf-plan` / `make tf-apply` set it for you.
 
-**Status: Step 0 is complete except the trial expiry date.** `bootstrap/` has
-been applied: `learn-anything-tfstate` exists in `ASIA-EAST2`, and reading it back
+**Status: complete.** Every item above is done and verified, and the credit's
+expiry date (2027-01-06) is recorded in *Inputs* with the window it implies.
+`bootstrap/` has been applied: `learn-anything-tfstate` exists in `ASIA-EAST2`, and reading it back
 from the API confirms `versioning_enabled: true`, `public_access_prevention:
 enforced`, `uniform_bucket_level_access: true`. Its outputs print the `backend
 "gcs"` block that `gcp/` will use.
@@ -273,18 +280,28 @@ serving traffic, and `render.yaml` no longer exists in the backend repo.
 
 ## M10 — Verify the budget claim with numbers
 
-After a week of real use, read the billed figure against the ~$3.33/day line, and
-commit the actual per-component cost table (the estimates in this plan are
-estimates). Record the **turn-off order** here: what we switch off first when
-spend runs ahead — frontend/sandbox scale-to-zero already handles the rest.
+The clock is fixed, so this is arithmetic rather than a feeling. Against
+**$3.30/day until 2027-01-06**, read the billed figure at three checkpoints and
+commit the actual per-component cost table (the estimates elsewhere in this plan
+are estimates):
 
-**Done when:** a dated cost note exists in this repo, and either the platform
-line is under the cap or the plan is amended with the number that broke it.
+| checkpoint | date | spend should be under |
+|---|---|---|
+| first week of real use | 2026-10-14 | ~$23 |
+| one third of the window | 2026-11-06 | ~$100 |
+| two thirds of the window | 2026-12-06 | ~$200 |
+
+Record the **turn-off order** here: what gets switched off first when spend runs
+ahead — frontend/sandbox scale-to-zero already handles the rest.
+
+**Done when:** each checkpoint has a dated note in this repo, and either the line
+is under the straight-line figure or the plan is amended with the number that
+broke it.
 
 ## Still assumed, correct me if any of these are wrong
 
 - Inference spend sits outside the 90-day credit and outside the $35/month
-  platform ceiling.
+  platform ceiling. It is still real money; M8 measures it anyway.
 - What happens at day 91 is "start paying": this plan therefore optimises for
   durability and a documented teardown, not for a clean `terraform destroy`.
 - No environment beyond `prod` and the scale-to-zero `staging`.
