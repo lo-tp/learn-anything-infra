@@ -1,0 +1,20 @@
+# Terraform working files
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Toolchain, not infrastructure. The Google Cloud SDK is 378 MB of binaries and
+# must never enter the object store; it belongs outside the repo.
+google-cloud-sdk/
+
+# Service-account keys belong outside this repo, in ~/.config/gcp/.
+# These patterns catch an accidental download into the working tree; they are
+# not where a key should live.
+learn-anything-510905-*.json
+*.pem
+
+# Terraform variables hold non-secrets (project id, region, budget ceilings).
+# Secrets are never written here: they are generated into Secret Manager (M7)
+# or exist only as env vars for a single run.

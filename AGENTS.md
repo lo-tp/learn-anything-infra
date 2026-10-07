@@ -9,9 +9,15 @@ repo as the single source of truth. Nothing here is provisioned with `gcloud`: t
 GCP project, its APIs, the cluster, the storage and the budgets are all
 Terraform's, and `kubectl` only talks to a cluster it did not create. One thing
 Terraform deliberately does not create: the DNS records
-([ADR 0004](./docs/adr/0004-dns-stays-at-namecheap.md)). The one Google-supplied
-binary in the design is `gke-gcloud-auth-plugin`, a credential helper `kubectl`
-needs to authenticate — it manages nothing.
+([ADR 0004](./docs/adr/0004-dns-stays-at-namecheap.md)).
+
+The Google Cloud SDK **is** installed (`google-cloud-sdk/` in this working tree,
+gitignored, and better placed outside the repo). Its permitted jobs are
+**identity, tooling, and reading**: signing a human or workload in, installing
+components such as `gke-gcloud-auth-plugin`, `docker-credential-gcloud` for
+local image pushes, and inspecting what exists. It is never the thing that
+creates or changes a resource: if a `gcloud` command would make something exist
+in the cloud, that something belongs in Terraform instead.
 
 Three documents carry the rest, each reached by its own condition:
 
@@ -57,6 +63,28 @@ In production the three are reached as surfaces under one domain:
   manifests, not in its Dockerfile defaults. Each app's image, however, is built
   in its own repo (`Dockerfile` and build workflow there); this repo consumes
   digests and pins tags.
+
+## Network
+
+This machine is in mainland China, and that changes how the tools fail. Direct
+connections to `oauth2.googleapis.com` and `container.googleapis.com` **black-hole**
+— they time out rather than refusing — while `registry.terraform.io` and
+`storage.googleapis.com` work. The visible symptom is that `terraform init`
+succeeds and `terraform plan` hangs.
+
+Route Terraform and `kubectl` through the local HTTP proxy:
+
+```sh
+export HTTPS_PROXY=http://127.0.0.1:6152
+export HTTP_PROXY=http://127.0.0.1:6152
+export NO_PROXY=localhost,127.0.0.1
+```
+
+`NO_PROXY` is not decoration: without it, health checks and debugging against the
+local dev servers (backend `8001`, sandbox `3001`) go through the proxy and fail.
+`make tf-plan` / `make tf-apply` set all three for you. Docker has its own proxy
+settings, set in Docker Desktop, not in this shell. CI in GitHub Actions needs
+none of this — it runs from GitHub's network.
 
 ## Datastore
 

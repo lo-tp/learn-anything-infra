@@ -35,34 +35,85 @@ foundation. The *why* behind each load-bearing choice lives in
 
 ## Step 0 — the three things only you can do
 
-1. Create the GitHub repo `lo-tp/learn-anything-infra`, add it as `origin`,
-   push. No pipeline in this plan can run before this.
-2. Sign up for the GCP free trial and give me the **billing account ID** — it is
-   an input to Terraform, which then creates the project itself and attaches that
-   billing account. Enabling APIs is Terraform's job too (M1), not yours.
-3. Give the tools something to authenticate with, without a `gcloud` login:
-   **Workload Identity Federation over GitHub's OIDC token** for CI (no key file,
-   nothing to rotate), and a short-lived service-account key for local `terraform`
-   runs until we don't need one. `kubectl` additionally needs
-   `gke-gcloud-auth-plugin` — it ships with the gcloud SDK and is installable on
-   its own; it is a credential helper, not an infra tool, and it is the only
-   thing in this plan with "gcloud" in its name.
+1. ~~Create the GitHub repo `lo-tp/learn-anything-infra`, add it as `origin`,
+   push.~~ **Done** — `github.com/lo-tp/learn-anything-infra` (private), `origin`
+   set, `main` pushed. No pipeline in this plan can run before this.
+2. ~~Sign up for the trial, create the project.~~ **Partly done** — the project
+   exists: `learn-anything-510905` (number `358071090957`). Still yours: the
+   **billing account ID** and the **trial expiry date**, which starts the 90-day
+   clock M10 measures. With the ID, Terraform attaches billing; enabling APIs is
+   Terraform's job (M1).
+3. Create the service account Terraform will act as, and **grant it its roles by
+   hand — this is the one permission list you do in a console**:
 
-**Done when:** `git push -u origin main` succeeds; `terraform init && terraform
-plan` reports the resources it intends to create against your billing account, and
-nothing in this plan asks for a `gcloud` command.
+   ```
+   terraform-local@learn-anything-510905.iam.gserviceaccount.com
+
+   roles/container.admin                      GKE
+   roles/compute.networkAdmin                 the VPC and subnetwork
+   roles/artifactregistry.admin               image repository
+   roles/storage.admin                        Terraform state and pg_dump buckets
+   roles/secretmanager.admin                  secrets (M7)
+   roles/serviceusage.serviceUsageAdmin       letting Terraform enable APIs
+   roles/iam.serviceAccountAdmin              creating the CI and node identities
+   roles/iam.serviceAccountUser               granting those to workloads
+   roles/resourcemanager.projectIamAdmin      GKE grants roles to its own agents
+
+   # on the billing account, not the project — may be refused on a trial account;
+   # if it is, the budgets move to hand-applied like DNS (ADR 0004)
+   roles/billing.viewer
+   roles/billing.budgetsWriter
+   ```
+
+   ~~Give the tools something to authenticate with.~~ **Done** — the key was
+   downloaded into this repo (a secret one `git add .` away from git history) and
+   is now `~/.config/gcp/learn-anything-510905.json`, mode `600`, with a
+   `.gitignore` pattern to catch a re-download. The credential is verified: it
+   mints a token and reaches the GKE API through the proxy. CI's Workload
+   Identity Federation comes later from Terraform, not from you.
+
+   Which identity Terraform acts as: **settled on (A)** — the `terraform-local`
+   key. Narrow, and it matches the shape CI will use (a workload identity, not a
+   human), so one authority model covers laptop and pipeline. The cost of that
+   choice is the one bootstrap grant: `roles/owner` on the project, attached by
+   hand, then dropped once the granular bindings below are live.
+
+Tooling, checked now that the SDK is installed: Google Cloud CLI **588.0.0** at
+`google-cloud-sdk/` in this working tree — 378 MB, untracked, now gitignored, and
+better moved out of the repo. **No account is signed in to it.**
+`gke-gcloud-auth-plugin` is **not** part of this install (it's a separate
+component: `gcloud components install gke-gcloud-auth-plugin`), and `kubectl`
+1.27 is several minor versions behind a cluster GKE would create today — both
+belong to M3, not to M1. `docker-credential-gcloud` *is* present, which is what
+makes local image pushes work in M2; note that Docker Desktop needs its own proxy
+setting, separate from the shell's.
+
+Terraform and `kubectl` must go through the local HTTP proxy; see *Network* in
+[`AGENTS.md`](./AGENTS.md), and `make tf-plan` / `make tf-apply` set it for you.
+
+**Done when:** the roles above are attached and `make tf-plan` reports the
+resources Terraform intends to create — including the APIs it enables itself,
+since the project currently answers `accessNotConfigured` for Cloud Resource
+Manager and Cloud Billing. No resource in this plan is created by a `gcloud`
+command; `gcloud` signs identities in, installs components, and reads.
 
 ## M1 — Terraform foundation
 
-The GCP **project** (`google_project`, trial billing account attached) and every
-API it needs (`google_project_service`: `container`, `secretmanager`,
-`artifactregistry`, `cloudbuild`, `compute`), then the GKE **Autopilot** cluster
-(one cluster zone in `asia-east2`), Artifact Registry, VPC + subnetwork, GCS
-bucket for dumps, Secret Manager entries and the CI service account's
-IAM and workload-identity federation, and **budgets with alert emails**
-(`google_billing_budget`, thresholds at 25/75/150 USD of the credit) before
-anything else is billable. Terraform is the only thing that creates any of it —
-with one deliberate exception, and it isn't here (ADR 0004).
+Two roots, decided by where state lives: **`bootstrap/`** creates one thing — the
+versioned GCS bucket that holds Terraform state — and keeps its own local state,
+because a backend cannot create itself. Everything after that lives in **`gcp/`**
+with remote state in that bucket: every API the project needs
+(`google_project_service`: `container`, `secretmanager`, `artifactregistry`,
+`compute`, `iam`, `cloudresourcemanager`), the VPC + subnetwork, the GKE
+**Autopilot** cluster in the `asia-east2` **region**, Artifact Registry with a tag
+cleanup policy, the `pg_dump` bucket (separate from the state bucket on purpose),
+Secret Manager entries, the CI identity with Workload Identity Federation, and
+**budget alerts that include credits**. A monthly budget of the $35 platform
+ceiling, alerting at 50/75/100% with `credit_types_treatment =
+INCLUDE_ALL_CREDITS`: while the trial credit hides the cost on the bill, the
+budget still measures real consumption, which is the whole point of the
+90-day constraint. Terraform creates all of it — with one deliberate exception,
+and it isn't here (ADR 0004).
 
 **Done when:** `terraform plan` is empty on a re-run; `terraform state list`
 shows the cluster, registry, bucket, budgets and service account; `kubectl get
@@ -211,5 +262,13 @@ line is under the cap or the plan is amended with the number that broke it.
 - No environment beyond `prod` and the scale-to-zero `staging`.
 - Whether Render's database holds data worth keeping — unverified; M9 treats it as
   an open decision.
-- Per-component cost figures below are estimates I have not verified against
-  Google's pricing page: **M1 replaces them with real numbers before M2 starts.**
+- Per-component cost figures in this plan are estimates I have not verified
+  against Google's pricing page: **M1 replaces them with real numbers before M2
+  starts.**
+- **State location is settled:** `bootstrap/` creates the versioned state bucket
+  in `asia-east2`; `gcp/` keeps its state there with the GCS backend, which
+  locks states on its own. One local state file remains, in `bootstrap/`, and it
+  holds one disposable bucket.
+- The Postgres password is generated by Terraform, so it lives in state. The state
+  bucket is treated as secret material for that reason: versioning on, no public
+  access, readable only by `terraform-local` and the CI identity.
