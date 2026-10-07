@@ -86,8 +86,12 @@ echo
 echo "TLS (does the presented certificate cover the name?):"
 while read -r host; do
   [ -n "$host" ] || continue
+  # `-ext subjectAltName` is an OpenSSL 1.1.1+ flag and macOS ships LibreSSL, which
+  # answers "unknown option" — a probe like this one has to degrade to no output
+  # rather than to an error that looks like a missing certificate.
   san="$(openssl s_client -servername "$host" -connect "$host:443" </dev/null 2>/dev/null \
-    | openssl x509 -noout -ext subjectAltName 2>/dev/null | tr ',' '\n' | grep -o "DNS:[^ ]*" || true)"
+    | openssl x509 -noout -text 2>/dev/null \
+    | awk '/Subject Alternative Name/{getline; print}' | tr ',' '\n' | grep -o "DNS:[^ ]*" || true)"
   if printf '%s' "$san" | grep -q "DNS:$host"; then
     printf '  %-26s certificate covers it\n' "$host"
   elif [ -z "$san" ]; then

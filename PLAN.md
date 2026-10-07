@@ -566,6 +566,67 @@ records typed into Namecheap match `terraform output dns_records` line for line,
 and `https://blog.lotp.xyz` still serves from GitHub Pages — unchanged because
 nothing near it was touched.
 
+**Status: done, and every clause of that gate was executed (2026-10-08, ~00:45
+local).** Three A records at TTL 300 point at the reserved address; the managed
+certificate is `Active` and its SANs cover all three names; `make dns-check`
+exits 0. Through the public surface: `http://api.lotp.xyz/health` → 301 → `https`
+→ 200; `learn.` sends an anonymous visitor to `/en/login?next=%2F` and gives a
+signed-in one **200 at `/en`** with real UI text; `sandbox./slides/x` is 200 with
+`Sec-Fetch-Dest: iframe` and 403 without (that app's own gate, working on the
+public host); `sandbox./api/compile` is a URL-map miss, which is the "never
+routed" rule holding; `blog.lotp.xyz` is untouched GitHub Pages. The session
+crosses surfaces because the backend now writes the cookie for `.lotp.xyz`
+(`COOKIE_DOMAIN`), verified end to end: `#HttpOnly_.lotp.xyz` in the jar,
+`/auth/me` → the user, signed-in `GET /` → 200.
+
+What it took, none of it visible in a `kubectl get ingress`:
+
+- **Programming the balancer took ~35 minutes, and the reason was in the
+  events, not the status.** `Error syncing to GCP: … networkEndpointGroups/
+  k8s1-…-kube-system-default-http-backend … was not found`: the controller was
+  waiting on the NEG for GKE's own catch-all backend. It fixed itself by creating
+  that NEG; `ADDRESS: <empty>` told me nothing.
+- **`ingress.kubernetes.io/force-ssl-redirect` is an nginx-ingress spelling; this
+  controller ignores it.** The URL map carried no `httpsRedirect` with it in
+  place. `spec.tls` without a `secretName` is worse than useless — it produced
+  `Error syncing to GCP: secret "" does not exist`. The mechanism that works is a
+  **FrontendConfig** with `redirectToHttps.enabled: true`, attached by annotation;
+  the redirect then appears on the target HTTP proxy (not in the URL map's path
+  matchers, so checking there misleads you).
+- **BackendConfig health checks did not change what was built.** GKE generates the
+  load balancer's health check for a NEG **from the workload's readiness probe**
+  where it can — one backend's check says so in its description — and a default
+  connect check otherwise; three BackendConfigs, correctly annotated and present
+  before the balancer was created, left the generated checks as they were. They
+  are deleted here, and the probes are the honest single definition: the
+  frontend's readiness path is `/en/login` rather than `/` (the root is a
+  redirect; passing on a 307 proves a socket, not a page), and the sandbox's is
+  HTTP on a static page instead of TCP.
+- **A woken tier answers 502 for 1–4 minutes after its pod is Ready.** The NEG
+  attaches to the backend service after the endpoint exists. Twice observed (a
+  rollout, then a scale-up), which is a fact for the scale-from-zero work still
+  open: wake latency is not only scheduling, it is the URL map catching up.
+- **Waking a third tier can fail outright.** With backend and database resident,
+  the frontend pod came back `Insufficient memory` with the cluster autoscaler in
+  backoff after 16 failed scale-ups; deleting the pending pod got it scheduled
+  onto its own Autopilot node. Two things follow: three tiers awake is not one
+  node, and "delete the stuck pod" is the unstick.
+- **Staging does not have a public surface, on purpose.** An address holds exactly
+  one global forwarding rule, so a second environment is a second address and a
+  second forwarding rule — a second monthly line — not another host block on this
+  one. Terraform declares those six names but separates *pointed* from *held*
+  (`dns_records` vs `dns_records_deferred`), because a record that resolves to an
+  address with no rule behind it looks exactly like a broken deploy. Whether
+  staging is worth the line is an M9 decision, and by then M10's checkpoints will
+  have priced the first one.
+
+**For M10's first checkpoint, the list of SKUs to read in the bill now includes the
+public surface**: a global static address in use, and *two* global forwarding rules
+(one per target proxy, HTTP and HTTPS) on that one address, plus the data
+processed through them. None of that is in the earlier cost notes, and none of it
+is a per-pod number, so it will not show up in the requests table this plan has
+been watching.
+
 ## M7 — Secrets to pods
 
 Terraform owns which secrets exist; CI reads them from Secret Manager and applies

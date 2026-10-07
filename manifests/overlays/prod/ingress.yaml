@@ -33,13 +33,21 @@ metadata:
     kubernetes.io/ingress.class: gce
     kubernetes.io/ingress.global-static-ip-name: learn-anything-ingress-ip
     networking.gke.io/managed-certificates: learn-anything-tls
-    # Port 80 stays open so that http:// is a redirect rather than a refused
-    # connection; the certificate is what the browser ends up on, not what it
-    # started at.
-    ingress.kubernetes.io/force-ssl-redirect: "true"
+    # HTTP→HTTPS, by the object that actually does it. `force-ssl-redirect` is the
+    # nginx-ingress spelling and this controller ignores it: with that annotation in
+    # place the URL map's path matchers carried no `httpsRedirect`, and `curl
+    # http://api.lotp.xyz/` got the backend's own answer in plaintext. FrontendConfig
+    # is GKE's own mechanism, and it is attached to the Ingress by this annotation.
+    # Port 80 stays open on purpose, so http:// is a redirect rather than a refused
+    # connection.
+    networking.gke.io/v1beta1.FrontendConfig: surfaces-https
   labels:
     app.kubernetes.io/part-of: learn-anything
 spec:
+  # No `spec.tls`: the certificate is the ManagedCertificate below, and spelling a
+  # second certificate path here — which this controller ignores anyway, as the
+  # first attempt in this file's history demonstrated — would be a second answer to
+  # one question.
   rules:
     - host: learn.lotp.xyz
       http:
@@ -77,6 +85,16 @@ spec:
                 name: sandbox
                 port:
                   number: 80
+---
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: surfaces-https
+  labels:
+    app.kubernetes.io/part-of: learn-anything
+spec:
+  redirectToHttps:
+    enabled: true
 ---
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate

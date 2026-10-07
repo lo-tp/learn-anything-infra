@@ -242,6 +242,38 @@ own skips the gate; use it only for changes that cannot touch the schema.
   exist. Copy it from `terraform output workload_identity_provider_names` rather
   than writing it out — that path cost one failed pipeline run to learn.
 
+## Public surface
+
+Three hostnames, one address, one certificate. The address is reserved by *name*
+(`learn-anything-ingress-ip`) so the DNS rows can be typed before the balancer
+exists and survive every later apply; the Ingress refers to it by that name. The
+host list lives in Terraform (`variables.tf`) and the Ingress carries a copy —
+`make dns-check` compares Terraform, the live Ingress and certificate, what the
+registrar answers, and what the certificate's SANs actually contain, and exits
+non-zero on a disagreement. Run it before concluding that an unreachable hostname
+is a code problem.
+
+Things this cluster does that the manifests do not show:
+
+- **The load balancer's health check comes from the workload's readiness probe**,
+  so the probe is judged twice — by the kubelet and by the URL map. Pick a path
+  that answers 200 with nothing behind it. `BackendConfig` health checks were
+  tried here and changed nothing that was generated.
+- **HTTP→HTTPS is a `FrontendConfig` with `redirectToHttps`.** The
+  `force-ssl-redirect` annotation is nginx's, ignored here; `spec.tls` without a
+  `secretName` is a sync error (`secret "" does not exist`), not a free
+  certificate.
+- **A woken tier returns 502 for a minute or two after its pod is Ready** — the
+  NEG attaches late. That is not a broken deploy; check the
+  `service/<name>` events for `Attach 1 network endpoint(s)`.
+- **An unprogrammed Ingress with an empty ADDRESS is usually a missing dependency
+  in the events**, not a slow LB: the first one waited on the NEG for
+  `kube-system/default-http-backend`.
+- **Staging has no public surface and no records.** One address = one forwarding
+  rule, so a second environment would be a second address and a second monthly
+  line; Terraform marks those hosts `dns_records_deferred` rather than leaving
+  them unspoken.
+
 ## Datastore
 
 The backend relies on a PostgreSQL database, run in-cluster as a StatefulSet with
