@@ -12,6 +12,12 @@ patches:
   # --replicas=1` when someone is about to test, and it costs nothing afterwards.
   - path: backend-zero.yaml
 
+  # Same reasoning, applied to the data tier: staging's database and its nightly
+  # dump both sleep, and neither costs anything while asleep. See the two files for
+  # what waking them means (an empty database, and a backup of nothing).
+  - path: database-zero.yaml
+  - path: db-backup-suspend.yaml
+
 configMapGenerator:
   # Staging has no public hostname (M6 gives prod one). Everything here is the
   # in-cluster address, which is also what makes staging usable as a place to test

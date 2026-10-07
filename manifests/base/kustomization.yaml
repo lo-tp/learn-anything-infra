@@ -19,3 +19,14 @@ resources:
   - backend.yaml
   - frontend.yaml
   - sandbox.yaml
+  - database.yaml
+  - db-backup.yaml
+
+# No secretGenerator anywhere in this tree, deliberately. The workloads pull
+# secret material by stable name (`backend-env`, `sandbox-env`, `database-env`)
+# through envFrom, and kustomize's generators suffix generated names with a
+# content hash — right for config kept in git, wrong for material that lives in
+# Secret Manager and is rendered into the cluster at deploy time. A Secret name is
+# worth keeping stable precisely so a manifest can name it; the contents never
+# enter this repo. scripts/render-secrets.sh does that rendering, and M7 replaces
+# it with a pipeline job.

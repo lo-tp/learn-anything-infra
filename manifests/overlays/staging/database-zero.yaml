@@ -1,0 +1,15 @@
+# Staging's database sleeps. A StatefulSet with zero replicas keeps its
+# volumeClaimTemplate but creates no PersistentVolumeClaim until a pod exists, so a
+# sleeping staging database costs no storage and no compute — which matters here
+# because the cost model bills requests (ADR 0001).
+#
+# Wake it with `kubectl scale statefulset/learn-anything-db -n staging
+# --replicas=1` when something needs a real database to test against. Note that
+# staging then starts with an *empty* database: it is not a copy of production, and
+# pretending otherwise would be the beginning of a bad afternoon.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: learn-anything-db
+spec:
+  replicas: 0

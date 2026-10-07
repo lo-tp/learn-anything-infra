@@ -59,3 +59,21 @@ variable "monthly_platform_budget_usd" {
   type        = number
   default     = 35
 }
+
+variable "k8s_namespace" {
+  description = <<-EOT
+    The namespace the production overlay deploys into. It appears in IAM here
+    because Workload Identity grants are scoped to a Kubernetes service account in
+    a specific namespace (database.tf), so this value and
+    manifests/overlays/prod/kustomization.yaml are the same fact stated twice.
+    Changing one without the other produces a pod that cannot write to its bucket,
+    which is a poor way to find that out — so it is a variable, not a literal.
+  EOT
+  type        = string
+  default     = "learn-anything"
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", var.k8s_namespace))
+    error_message = "k8s_namespace must be a valid DNS-1123 label: lowercase alphanumerics and hyphens."
+  }
+}

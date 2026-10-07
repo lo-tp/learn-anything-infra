@@ -1,0 +1,152 @@
+# PostgreSQL, in the cluster (ADR 0002). A Deployment is the wrong shape for this:
+# the identity of a Deployment pod is disposable and Postgres needs its identity to
+# persist, so it is a StatefulSet with one replica and one volumeClaimTemplate.
+#
+# Reclaim policy is `Delete` (database.tf), which is a decision rather than a
+# default: deleting this StatefulSet deletes the data. That is survivable because
+# the nightly dump in db-backup.yaml is the recovery path, and it is the reason
+# that CronJob is not optional decoration.
+apiVersion: v1
+kind: Service
+metadata:
+  name: learn-anything-db
+  labels:
+    app.kubernetes.io/name: learn-anything-db
+    app.kubernetes.io/part-of: learn-anything
+    app.kubernetes.io/component: database
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: learn-anything-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: learn-anything-db
+  labels:
+    app.kubernetes.io/name: learn-anything-db
+    app.kubernetes.io/part-of: learn-anything
+    app.kubernetes.io/component: database
+spec:
+  serviceName: learn-anything-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: learn-anything-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: learn-anything-db
+        app.kubernetes.io/part-of: learn-anything
+        app.kubernetes.io/component: database
+    spec:
+      # Postgres talks to no Google API: it serves one service address inside the
+      # namespace and nothing else. Workload Identity is for the backup job, not here.
+      automountServiceAccountToken: false
+      securityContext:
+        # The postgres image runs as uid 999; the fsGroup is what lets it write the
+        # PersistentVolume, which arrives root-owned.
+        fsGroup: 999
+      containers:
+        - name: postgres
+          # Pinned to the minor the dump in db-backup.yaml is built from. The tag is
+          # mutable upstream (`postgres:17` moves), so it is fixed here rather than
+          # left to drift under a running database.
+          image: postgres:17.11
+          args: ["-c", "jit=off"]
+          env:
+            # The role and database name are not secret material; only the password is,
+            # and that arrives from the Secret the deploy step renders from Secret
+            # Manager (gcp/database.tf generates it; scripts/render-secrets.sh copies it).
+            - name: POSTGRES_DB
+              value: learn_anything
+            - name: POSTGRES_USER
+              value: learn
+            # The data directory is a subdirectory of the mount, not the mount.
+            # The CSI driver formats the volume with a filesystem, and a fresh ext4
+            # filesystem contains `lost+found`, so using the mount point itself as
+            # PGDATA makes initdb refuse to run: "directory exists but is not empty
+            # … perhaps due to it being a mount point". This is the failure of a
+            # first start on a new volume, which is the only start you get to
+            # practise before it happens in an emergency.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          envFrom:
+            - secretRef:
+                name: database-env
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            # The mount that makes the volumeClaimTemplate below mean anything. A
+            # StatefulSet that declares a PVC but does not mount it looks durable
+            # and is not: Postgres then writes to the container filesystem, which
+            # ends when the pod does, and the next pod runs initdb on an empty
+            # cluster. That is exactly what this file did the first time it was
+            # applied — the PVC sat Bound and unused while a deleted pod took the
+            # schema with it. `df /var/lib/postgresql/data` reporting the node's
+            # 95 GB instead of this volume's 5 GB is how to tell, in one command,
+            # whether the mount is real.
+            - name: data
+              # The mount root, one level above PGDATA, deliberately: mounting at
+              # PGDATA itself is what reintroduces the lost+found problem.
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          # Both probes answer the local question — can this process accept a
+          # connection — because that is the one that decides whether the pod is
+          # trustworthy. The backend decides for itself whether the database is
+          # reachable, and a database that has lost its client is not a dead database.
+          #
+          # `pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"` asks over a socket as
+          # that role. Without the role it answers the weaker question ("someone can
+          # connect"), which stays true while authenticating every real client fails —
+          # the one failure this probe should catch.
+          #
+          # jit=off above is billing, not tuning: on Autopilot's compute platform JIT
+          # is useless, and with it on, a planning query at startup holds a full core
+          # for a couple of seconds, which is a real charge on a cluster billed by
+          # request (ADR 0001).
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: learn-anything-db
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # `dynamic-rwo` rather than the cluster's default: the default is
+        # `standard-rwo` (pd-standard), and pd-balanced costs about half as much per
+        # GiB for the same reliability class here. Storage is the one place in this
+        # cluster where the cheaper choice is also the correct one.
+        #
+        # Not `standard-rwo` with Hyperdisk throughput tiers: those add a per-GiB
+        # provisioned-throughput charge, which is exactly the shape of cost a
+        # single-user database does not need.
+        storageClassName: dynamic-rwo
+        resources:
+          requests:
+            # 5 Gi at pd-balanced rates is a rounding error on the monthly ceiling
+            # (about $0.14/month in asia-east2). The number is a ceiling on a
+            # product that stores text and JSON, and PVCs cannot shrink; growing it
+            # later is an edit, not a migration.
+            storage: 5Gi

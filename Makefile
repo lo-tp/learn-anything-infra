@@ -19,7 +19,13 @@ tf-plan:
 	cd $(ROOT) && $(AUTH) $(GCP_ENV) terraform plan
 
 tf-apply:
-	cd $(ROOT) && $(AUTH) $(GCP_ENV) terraform apply
+	cd $(ROOT) && $(AUTH) $(GCP_ENV) terraform apply $(TF_ARGS)
+
+# Non-interactive apply, for when the review already happened: `make tf-apply-yes`.
+# Split rather than the default, because an apply that never asks is an apply that
+# can spend money while you are not looking.
+tf-apply-yes:
+	$(MAKE) tf-apply TF_ARGS=-auto-approve
 
 tf-output:
 	cd $(ROOT) && $(AUTH) $(GCP_ENV) terraform output
@@ -46,4 +52,17 @@ kcheck:
 	$(kenv) kubectl get ns
 	$(kenv) kubectl get nodes || true
 
-.PHONY: tf-fmt tf-init tf-plan tf-apply tf-output kcreds kcheck
+# The namespace the production overlay deploys into, kept next to the Terraform
+# variable of the same name (variables.tf explains why both exist).
+NS ?= learn-anything
+PROJECT_ID := $(shell $(AUTH) $(GCP_ENV) terraform -chdir=gcp output -raw project_id 2>/dev/null)
+
+# Copy Secret Manager values into the cluster Secrets the workloads read by name
+# (scripts/render-secrets.sh). This is the interim form; M7 puts the same step in
+# the pipeline. It runs as the human identity, like every gcloud/kubectl target
+# here: kubectl needs the human credential for the auth plugin, and that identity
+# can read Secret Manager because it is the project owner.
+secrets:
+	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/render-secrets.sh $(NS) $(SECRETS)
+
+.PHONY: tf-fmt tf-init tf-plan tf-apply tf-apply-yes tf-output secrets kcreds kcheck

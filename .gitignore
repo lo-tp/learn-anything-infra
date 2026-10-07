@@ -21,3 +21,6 @@ learn-anything-510905-*.json
 
 # generated cluster credentials (AGENTS.md, "Cluster access")
 .kubeconfig-gke
+
+# Written by gke-gcloud-auth-plugin in the directory kubectl ran from.
+gke_gcloud_auth_plugin_cache

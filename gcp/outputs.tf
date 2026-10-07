@@ -28,3 +28,21 @@ output "pgdump_bucket" {
 output "secret_names" {
   value = [for s in google_secret_manager_secret.shared : s.secret_id]
 }
+
+output "project_id" {
+  description = <<-EOT
+    Read out rather than assumed: the render step (scripts/render-secrets.sh) needs
+    it to address Secret Manager, and a project id copied by hand into a script is
+    a second source of a fact Terraform already knows.
+  EOT
+  value       = google_project.main.project_id
+}
+
+output "k8s_namespace" {
+  description = <<-EOT
+    The namespace the production overlay deploys into, next to the IAM grants that
+    name it. If this and manifests/overlays/prod/kustomization.yaml disagree, that
+    is visible here rather than in a pod that cannot reach its bucket.
+  EOT
+  value       = var.k8s_namespace
+}

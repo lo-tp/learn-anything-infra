@@ -194,6 +194,40 @@ app rewrites to its own driver. The backend keeps its own migrations as the sour
 of truth for schema, and a migration Job gates every rollout. Infra owns the
 server, the volume, the credentials and the dumps — not tables.
 
+Reaching it, in the two ways that are actually useful:
+
+```sh
+# inside the cluster (the postgres image ships psql; no port-forward needed)
+kubectl -n learn-anything exec learn-anything-db-0 -- psql -U learn -d learn_anything
+
+# from the laptop, for `alembic`: the password is in the Secret the deploy renders,
+# which comes from Secret Manager (`db-password`) via `make secrets`
+kubectl -n learn-anything port-forward svc/learn-anything-db 5433:5432
+# DATABASE_URL=postgresql+psycopg://learn:<password>@127.0.0.1:5433/learn_anything
+```
+
+Two failure modes of this setup look like something they are not, and both were
+met:
+
+- **A `volumeClaimTemplate` that no container mounts is not persistence.** The
+  PVC says `Bound`, the PV looks healthy, and the data is on the container
+  filesystem, so it dies with the pod. `df -h /var/lib/postgresql/data` reporting
+  the node's disk rather than the volume's 5 Gi is the one-command check.
+- **A fresh volume is not a valid PGDATA.** The filesystem the CSI driver formats
+  contains `lost+found`, and `initdb` refuses to run in a non-empty directory.
+  The data directory is a subdirectory of the mount (`PGDATA=…/data/pgdata`).
+
+Workload Identity for a **GKE** pool binds with
+`serviceAccount:<project_id>.svc.id.goog[<namespace>/<ksa>]` — not the
+`principal://…/ksa/…` form, which this cluster's IAM rejects, and not the
+`principalSet://…/attribute.repository/…` form that is correct for the GitHub OIDC
+providers in `gcp/ci_identity.tf`. Three syntaxes, two of which look interchangeable.
+
+The dumps go to `gs://learn-anything-pgdump` (the name is
+`terraform output pgdump_bucket`), and the backup service account holds
+`roles/storage.objectCreator` only: it can write a dump and cannot read the
+bucket back. Reading and restoring are done with a human identity.
+
 ## DNS
 
 The domain is registered with Namecheap **and its DNS stays there**: the zone is

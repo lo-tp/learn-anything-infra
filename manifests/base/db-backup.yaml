@@ -1,0 +1,169 @@
+# The nightly dump (PLAN.md M4). ADR 0002 makes this job the reason in-cluster
+# Postgres is acceptable: with reclaim policy `Delete`, this CronJob *is* the
+# recovery path, so it is part of the storage design rather than an add-on to it.
+#
+# Two containers on purpose. `pg_dump` must come from the same minor as the server
+# (a newer client refuses an older server's catalog; an older one misses features),
+# so the dump runs in the postgres image and the upload runs in the Cloud SDK image
+# — which has no package manager at runtime, so `gsutil` cannot be installed into
+# the postgres image and `pg_dump` cannot be installed into that one.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: db-backup
+  annotations:
+    # Workload Identity: this Kubernetes service account impersonates the Google one
+    # that gcp/database.tf granted object-administrator on the dump bucket. The
+    # namespace half of that grant is a Terraform variable precisely because it has
+    # to equal the namespace these manifests deploy into; see variables.tf.
+    iam.gke.io/gcp-service-account: db-backup@learn-anything-510905.iam.gserviceaccount.com
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup
+  labels:
+    app.kubernetes.io/name: db-backup
+    app.kubernetes.io/part-of: learn-anything
+    app.kubernetes.io/component: database
+spec:
+  # 17:30 UTC is 01:30 in Asia/Shanghai, the timezone this product's users are in:
+  # the quietest hour for this product and the most boring hour to discover a
+  # restore problem in. The dump itself costs nothing measurable (Autopilot bills
+  # the pod's requests for the minutes it runs, which is cents).
+  schedule: "30 17 * * *"
+  # Two dumps writing the same object at once is possible only if a run overruns its
+  # interval; Forbid makes that impossible instead of merely unlikely.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: db-backup
+        app.kubernetes.io/part-of: learn-anything
+    spec:
+      # A failed backup is retried rather than waiting a day to be noticed. The
+      # bucket lifecycle in gcp/storage.tf keeps 30 days of dumps, so a few retries
+      # are noise; a missing night is not.
+      backoffLimit: 3
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: db-backup
+            app.kubernetes.io/part-of: learn-anything
+        spec:
+          restartPolicy: Never
+          serviceAccountName: db-backup
+          securityContext:
+            # Both images run unprivileged; neither writes outside the shared volume
+            # and the bucket. The Google identity this pod asserts comes from
+            # serviceAccountName above plus the annotation on it — there is no key
+            # file in this pod, which is the point of Workload Identity.
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+            fsGroup: 10000
+          volumes:
+            # The dump lands here. emptyDir rather than a volume of its own: a dump
+            # of this database is a few megabytes and its only purpose is to be
+            # uploaded by the next container in the same pod.
+            - name: dump
+              emptyDir:
+                sizeLimit: 1Gi
+          initContainers:
+            - name: dump
+              # The same image and tag as the server, so client and server agree by
+              # construction rather than by whoever remembers to update both files.
+              image: postgres:17.11
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  # The timestamp is UTC and sortable, which is what makes a
+                  # restore-by-date query a filename sort instead of a conversation.
+                  out="/dump/learn_anything-$(date -u +%Y-%m-%dT%H:%M:%SZ).sql.gz"
+                  echo "dumping learn_anything to $out"
+                  # PGPASSWORD and the connection parameters come from the same
+                  # Secret the server reads. -Fc is the custom format: compressed,
+                  # and restorable selectively (one table, one schema) rather than
+                  # all-or-nothing.
+                  pg_dump --format=custom --compress=zstd --no-owner --no-privileges \
+                    --host=learn-anything-db --port=5432 \
+                    --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
+                    --file="$out"
+                  # Fail here rather than at restore time: a zero-length dump is a
+                  # successful-looking job that backs up nothing.
+                  test "$(stat -c%s "$out")" -gt 1024
+              env:
+                - name: POSTGRES_DB
+                  value: learn_anything
+                - name: POSTGRES_USER
+                  value: learn
+              envFrom:
+                - secretRef:
+                    name: database-env
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              volumeMounts:
+                - name: dump
+                  mountPath: /dump
+          containers:
+            - name: upload
+              # google-cloud-cli:alpine ships `gcloud storage`, which is the only
+              # thing this container does. It is pinned by digest at deploy time like
+              # every other image here.
+              image: gcr.io/google.com/cloudsdktool/google-cloud-cli:alpine
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  set -- /dump/*.sql.gz
+                  # Upload every dump the dump container produced (normally one).
+                  # `gcloud storage cp -r` on a glob keeps the object names, which is
+                  # what makes the bucket readable as a timeline.
+                  for f in "$@"; do
+                    echo "uploading $f"
+                    gcloud storage cp "$f" "gs://$BACKUP_BUCKET/"
+                    # The object name is the log line that matters: it is what a
+                    # restore starts from. Note there is no `gcloud storage ls` here
+                    # on purpose — this pod's Google identity is granted
+                    # storage.objectCreator and nothing else (gcp/database.tf), so it
+                    # can write a dump and cannot read the bucket back. Verifying the
+                    # archive is the next person's job, with their own identity.
+                    echo "restored with: gcloud storage cp gs://$BACKUP_BUCKET/$(basename "$f") - | pg_restore -d <database>"
+                  done
+              env:
+                # gcloud writes a config and log directory on every invocation, and
+                # its default is $HOME/.config/gcloud — which for this image, run
+                # unprivileged as it is below, is `/` and not writable. Without this
+                # the copy fails before it reads a credential, with a message about
+                # directory permissions that points nowhere near the real problem.
+                - name: CLOUDSDK_CONFIG
+                  value: /tmp/gcloud-config
+                - name: BACKUP_BUCKET
+                  # The bucket gcp/storage.tf creates (`${project_id}-pgdump`) with
+                  # the 30-day lifecycle that is the retention policy, and the one
+                  # gcp/database.tf grants this pod's Google identity
+                  # object-administrator on. Written literally here because a bucket
+                  # name is a product fact, not a per-environment one; staging does
+                  # not back up at all (its overlay suspends this job). If that ever
+                  # changes, `terraform output pgdump_bucket` is the answer and this
+                  # line is the mistake.
+                  value: learn-anything-pgdump
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              volumeMounts:
+                - name: dump
+                  mountPath: /dump

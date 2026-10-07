@@ -1,0 +1,17 @@
+# Staging does not back up. Two reasons, both real:
+#
+#   * there is nothing worth recovering — staging's database is empty by design, so a
+#     dump of it is a file nobody would restore, and it would sit in the same bucket
+#     as production's dumps where the only thing it can do is confuse a later reader;
+#   * with the StatefulSet at zero replicas (database-zero.yaml) a dump would fail
+#     against a service with no endpoint, and a CronJob that fails every night is the
+#     kind of noise that trains you to ignore the alerts that matter.
+#
+# `suspend: true` rather than deleting the job: the schedule stays visible in the
+# manifest, and waking staging's backup for a restore drill is one edit.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup
+spec:
+  suspend: true

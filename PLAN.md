@@ -294,6 +294,18 @@ options, in the order I would weigh them:
 - **(A) KEDA + an external request-count scaler** (Prometheus/Stackdriver). Keeps
   everything in the cluster and teaches the most; the KEDA controller is itself a
   always-on pod, i.e. part of a floor-sized pod's worth of cost.
+  **Corrected after choosing it, before installing it:** the arithmetic is worse
+  than "part of a floor-sized pod". KEDA's HTTP add-on ships three deployments
+  (interceptor, scaler, operator) with a combined default of 8 replicas, and
+  GKE's own addon config runs a 3-replica operator plus a 1-replica interceptor
+  and scaler. At the floor price in the table above that is ~$100/month for the
+  defaults, and ~$25–38/month even after shrinking every one of them to a single
+  replica — i.e. the same order of cost as **(D)**, which was supposed to be the
+  expensive option. Nothing was installed; this is the manifest replica counts
+  multiplied by the billing floor, not an invoice. It does not rule (A) out, but
+  it moves the comparison: (A) buys scale-from-zero while spending most of what
+  it saves, and **(C)** is now the only option in that table that is clearly
+  cheaper while idle. Decide again before M8, not silently in the manifests.
 - **(B) Knative on GKE.** Purpose-built scale-from-zero with a request-queueing
   activator; a second system to learn, and its own control-plane pods.
 - **(C) Those two tiers on Cloud Run, backend stays on GKE.** Cheapest when idle
@@ -328,6 +340,70 @@ the dev compose file. `DATABASE_URL` handed to the backend in the plain
 
 **Done when:** `alembic upgrade head` succeeds against it, and deleting the
 database pod leaves the data intact when it comes back.
+
+**Status: applied, and the gate passes (2026-10-07).** `postgres:17.11` (the
+plan said `postgres:17`; a mutable tag under a database is not the same thing as
+a version), 5 Gi on `dynamic-rwo`, one headless Service, one credential generated
+by `random_password` into Secret Manager as `db-password`, and the nightly
+CronJob. Gate evidence:
+
+- `alembic upgrade head` over a port-forward: `alembic current` reports
+  `c3d4e5f6a7b8 (head)` and 10 tables exist.
+- A row written before `kubectl delete pod learn-anything-db-0` is readable after
+  the replacement pod starts, the PVC and PV keep their identities, and the new
+  pod's log says `database system was shut down … ready to accept connections`
+  instead of running initdb.
+- One manual run of the CronJob (`kubectl create job --from=cronjob/db-backup`)
+  uploaded `learn_anything-<timestamp>.sql.gz` (27.5 KB) to
+  `gs://learn-anything-pgdump`. The CronJob itself is left in place for its
+  17:30 UTC schedule; the manual Jobs were deleted.
+- `kubectl kustomize` renders 15 objects for each overlay; staging's StatefulSet
+  comes out at `replicas: 0` with the CronJob `suspend: true`, and the prod set
+  passes `kubectl apply --dry-run=server` with no errors. The *whole* overlay is
+  still not applied — that is M3's remaining gate, and it still needs images and
+  the other two Secrets.
+
+Things it took to get right, each of which would have been worse to meet later:
+
+- **A `volumeClaimTemplate` that is not mounted is not persistence.** The first
+  version declared the PVC and never put a `volumeMounts` entry in the container,
+  so Postgres wrote to the container filesystem: the PVC sat `Bound`, the PV
+  looked healthy, and deleting the pod deleted the schema. `df -h
+  /var/lib/postgresql/data` showing the node's 95 GB instead of the volume's 5 GB
+  is a one-command test for whether the mount is real; that is what the comment in
+  `manifests/base/database.yaml` records.
+- **`initdb` refuses a fresh volume used as PGDATA**: the filesystem the CSI
+  driver formats contains `lost+found`, and initdb says *"directory exists but is
+  not empty … perhaps due to it being a mount point"*. Fix is a subdirectory —
+  `PGDATA=/var/lib/postgresql/data/pgdata` — which is also why the mountPath is
+  one level above it.
+- **Workload Identity member syntax for a GKE pool is not the generic
+  Workload Identity Federation syntax.** `principal://…/ksa/<ns>/<ksa>` was
+  rejected twice ("Invalid principal member", then "of an unknown type"); what
+  this cluster's IAM accepts is
+  `serviceAccount:<project_id>.svc.id.goog[<namespace>/<ksa>]`, matching the GKE
+  docs. `gcp/ci_identity.tf` (GitHub OIDC) legitimately uses the other form, so
+  copying between the two is a trap.
+- **The backup job's grant is write-only on purpose**, and the job found that out
+  itself: its last line used to be `gcloud storage ls`, which failed with
+  `storage.objects.list denied` because the service account holds
+  `roles/storage.objectCreator` and nothing more. The read was removed rather than
+  the grant widened; the job's log prints the object URI and how to restore it.
+- **`gcloud` in an unprivileged container needs a writable config dir**
+  (`CLOUDSDK_CONFIG`), or it dies talking about `/​.config/gcloud` permissions
+  before it ever reads a credential.
+- **The backend's `DATABASE_URL` is a psycopg3 URL, not an asyncpg one**
+  (`learn-anything-backend/db/models.py:45` rewrites a driver-less
+  `postgresql://` URL); an asyncpg URL would have survived that rewrite and then
+  failed at connect time.
+
+Not yet done, and it belongs on the list: **the dump has never been restored.**
+Writing an archive is not the same as having a recovery, and the first time this
+archive is read should not be the time it is needed. M9 has the restore drill.
+
+`scripts/render-secrets.sh` (and `make secrets`) is the interim bridge from Secret
+Manager to cluster Secret; M7 replaces it with a pipeline step. It is deliberately
+dumb, and it refuses to render an empty value.
 
 ## M5 — Migrations as a gate
 
@@ -397,7 +473,11 @@ and only then stop the Render services and delete `render.yaml` and the "Deploy
 ([CONTEXT.md → cutover](./CONTEXT.md)).
 
 **Done when:** `learn.lotp.xyz` serves a real session, no Render service is
-serving traffic, and `render.yaml` no longer exists in the backend repo.
+serving traffic, and `render.yaml` no longer exists in the backend repo. The
+cutover is also the first time a `pg_dump` archive is read back: do the restore
+into the in-cluster database with `pg_restore`, not by hand, so the nightly backup
+has been exercised by the time it is the only recovery path (M4 wrote archives;
+nothing has restored one yet).
 
 ## M10 — Verify the budget claim with numbers
 
