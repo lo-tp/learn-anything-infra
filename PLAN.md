@@ -212,13 +212,36 @@ and each one starts under a container runtime and answers its own first route
 (`/health` for the backend, `/` for the frontend, `/slides/...` or
 `/api/compile` for the sandbox).
 
-**Status: images one of three; the pipeline is proven end to end.** The backend
-has a `Dockerfile`, a `.dockerignore` and `build-image.yml`, and CI builds and
-pushes it: `main` → an image tagged `sha-<commit>` in Artifact Registry, and
-production is now pinned to one of those digests (`dd32533a…`, from `fdb0b377`).
-Locally it was verified earlier: 48 s warm build, starts as uid 10001, `/health`
-answers `{"status":"ok"}`, `prompts/` is baked in, 17 routes, 495 MB. The frontend
-and sandbox images are not written yet.
+**Status: all three images exist, each verified by its own workflow, and all three
+are pinned in `overlays/prod` by digest.** The backend has a `Dockerfile`, a
+`.dockerignore` and `build-image.yml`, and CI builds and pushes it: `main` → an
+image tagged `sha-<commit>` in Artifact Registry, and production is pinned to one of
+those digests (`dd32533a…`, from `fdb0b377`). Locally it was verified earlier: 48 s
+warm build, starts as uid 10001, `/health` answers `{"status":"ok"}`, `prompts/` is
+baked in, 17 routes, 495 MB.
+
+For the two Node services, verification moved to CI deliberately: building an amd64
+image of those dependency trees on this laptop means qemu plus a proxied `npm ci`,
+which took longer than the pipeline it was meant to check. So the gate's second half
+became a **smoke step** in each workflow — run the artifact, assert its first route.
+That step paid for itself twice, in two bugs nothing else found:
+
+- **`npm ci --omit=dev` ran the package's `prepare` hook, which calls `husky` — a
+  devDependency that stage deliberately does not install.** Exit 127, on a command
+  nobody asked for. The fix is `--ignore-scripts`; esbuild's postinstall is the one
+  hook worth reasoning about, and the answer is that its binary arrives as a
+  platform-specific optional dependency, which the smoke step then proves by
+  compiling a component for real.
+- **The working directory was not writable by the app user.** `COPY --chown` reaches
+  the copied paths, not the directory `WORKDIR /app` created, so the sandbox
+  started, routed `/api/compile`, and failed writing its own gate fixture:
+  `EACCES: permission denied, open '/app/compile-gate-….cjs'`. A container that
+  writes at runtime needs its *directory* writable, which is a different claim from
+  "its files are owned by the app user".
+
+The workflow order is now build → smoke → **publish**, so an artifact that never
+answered a request never gets a tag; the one that had (`sha-d16da99…`, the sandbox
+build with the unwritable directory) was deleted from the registry.
 
 The first CI runs failed twice, in ways no local build could have taught:
 
@@ -276,11 +299,16 @@ HPAs, resource requests/limits, probes.
 data tier. Both overlays render, and both pass `kubectl apply --dry-run` against
 the live cluster with no errors. In production the backend runs and reports Ready
 through its own probe; the frontend and sandbox are at zero replicas by patch
-(`asleep.yaml`) because their images do not exist yet — which is the gate clause
-"the other two sit at zero", arrived at by a different route than the HPA
-placeholder originally imagined, and the honest one while M2 is unfinished. What is
-still missing is the same named list: the frontend and sandbox images (M2), and
-real Secret values (`OPENAI_API_KEY` remains a placeholder until M8).
+(`asleep.yaml`) — the gate clause "the other two sit at zero", arrived at by a
+different route than the HPA placeholder originally imagined. Their images now exist
+and are pinned by digest, so what still keeps them from serving is the **wake-up
+mechanism** (KEDA, option A, not installed) and **M6's ingress and hostnames**. The
+HPA placeholders are gone from both: a `minReplicas: 1` HorizontalPodAutoscaler
+forbids the zero that ADR 0001's design requires, and KEDA expects to own that
+range. What is still missing for this gate is the same named list: those
+ScaledObjects, and a real `OPENAI_API_KEY` (a placeholder until M8). Staging is
+apply-able and deliberately not runnable: no images built with staging origins, no
+hostnames — which is what `overlays/staging/asleep.yaml` states rather than hides.
 
 ### The scale-to-zero design does not survive contact with the API
 
@@ -384,8 +412,17 @@ CronJob. Gate evidence:
 - `kubectl kustomize` renders 15 objects for each overlay; staging's StatefulSet
   comes out at `replicas: 0` with the CronJob `suspend: true`, and the prod set
   passes `kubectl apply --dry-run=server` with no errors. The *whole* overlay is
-  still not applied — that is M3's remaining gate, and it still needs images and
-  the other two Secrets.
+  applied now (M3 closed); what the data tier was waiting for was images and the
+  other Secrets, and both exist.
+- **`make secrets` did not write.** It built each Secret with `create
+  --dry-run=client -o yaml` and piped it into `kubectl apply --dry-run=server`: a
+  validation that never persisted anything. `backend-env` and `database-env` existed
+  only because an earlier version of the script had created them, so the gap was
+  invisible until a *new* Secret (`frontend-env`) came out "created (server dry
+  run)" and was not there afterwards. It applies now, and `CHECK_ONLY=1` is the
+  validate-without-writing path. Rendering a Secret is not the end of a rotation
+  either: a running container keeps the environment it started with, so a rotated
+  value reaches a pod only when that pod is replaced.
 
 Things it took to get right, each of which would have been worse to meet later:
 

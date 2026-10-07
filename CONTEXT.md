@@ -50,3 +50,16 @@ The documented order in which services are stopped when spend runs ahead of the
 budget — the deliberate, pre-chosen sequence that keeps the product partly
 alive rather than all of it dead.
 _Avoid_: kill list, degradation mode.
+
+**Publish**:
+To send a built image to Artifact Registry under its `sha-<commit>` tag. A build
+workflow publishes only *after* that image has passed its smoke test, so a tag in
+the registry is evidence the artifact answered a request.
+_Avoid_: upload, ship, push-to-cloud (the tag is pushed; the image is published).
+
+**Smoke test** (of an image):
+The CI step that runs the built artifact and asserts its first route — `/health`,
+the redirect to a sign-in page, `/api/compile`. It is the image's contract written
+as a step, not a manual check someone performs afterwards: a build that succeeds
+proves the compiler ran, not that the image can serve anything.
+_Avoid_: health check (that is the Kubernetes probe), sanity check, e2e.
