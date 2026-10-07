@@ -1,0 +1,21 @@
+# The three workloads as they run in every environment. Environment-specific
+# things — namespace, image digests, hostnames — arrive in overlays/prod and
+# overlays/staging, which is why there is no `namespace:` here: the base does not
+# know which environment it is being used for, and a namespace declared here would
+# be rewritten for the workloads but not for the Namespace object itself, which is
+# the kind of half-true statement that reads as a bug.
+#
+# Two contracts the app images must honour, asserted below rather than assumed:
+#
+#   * run as a non-root user (`runAsNonRoot: true`),
+#   * answer a dependency-free readiness route where one exists (the backend's
+#     `/health`), so a slow database is never read as a dead pod.
+#
+# Resource requests sit at the small end on purpose, because Autopilot bills
+# requests rather than usage (ADR 0001): a number in this file is an invoice line,
+# not a hint. PLAN.md M10 replaces them with what the bill actually charged, which
+# is the only version of that table worth trusting.
+resources:
+  - backend.yaml
+  - frontend.yaml
+  - sandbox.yaml

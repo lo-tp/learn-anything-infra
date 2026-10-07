@@ -1,0 +1,30 @@
+namespace: staging
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+patches:
+  # Staging sleeps. ADR 0003's one-replica rule is about not splitting a
+  # conversation across two live processes; it is not a promise that an unused
+  # environment pays for a warm backend. Zero replicas keeps that promise and this
+  # project inside its credit: `kubectl scale deployment/backend -n staging
+  # --replicas=1` when someone is about to test, and it costs nothing afterwards.
+  - path: backend-zero.yaml
+
+configMapGenerator:
+  # Staging has no public hostname (M6 gives prod one). Everything here is the
+  # in-cluster address, which is also what makes staging usable as a place to test
+  # the wiring between the three services without a browser in the loop.
+  - name: backend-config
+    literals:
+      - FRONTEND_DOMAIN=http://frontend.staging.svc.cluster.local:80
+      - SANDBOX_URL=http://sandbox.staging.svc.cluster.local:80
+      - LOG_LEVEL=DEBUG
+
+  # `ALLOWED_FRAME_ANCESTORS` is absent on purpose: with no public origin there is
+  # nothing to allow, and the sandbox fails secure to `self` when the value is
+  # unset rather than defaulting to an over-broad `*`.
+  - name: sandbox-config
+    literals:
+      - NEXT_PUBLIC_BACKEND_URL=http://backend.staging.svc.cluster.local:80

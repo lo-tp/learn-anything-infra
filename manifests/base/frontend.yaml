@@ -1,0 +1,126 @@
+# The web app. Scales to zero when unused (ADR 0001): the cost of this Deployment
+# while nobody is visiting is the cost of nothing.
+#
+# Note what is *not* here: `NEXT_PUBLIC_*`. Those are inlined into the bundle at
+# build time, which is why the image is environment-specific (PLAN.md M2) and why
+# an environment's config cannot retarget a frontend that is already built. The
+# only runtime secret this container needs is the cookie-signing `JWT_SECRET`,
+# shared with the backend.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: learn-anything
+    app.kubernetes.io/component: web
+spec:
+  # The HPA owns this number. 1 is the starting point so a first request is not
+  # racing a cold start against the scaler; whether it is still 1 when you read
+  # this depends on traffic, which is the intended state.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/part-of: learn-anything
+        app.kubernetes.io/component: web
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: frontend
+          image: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-frontend:placeholder
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: frontend-env
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: learn-anything
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Scale-to-zero is what makes an idle app free (ADR 0001), and this is where that
+# design meets the API. Two facts, both measured against this cluster rather than
+# read off a blog:
+#
+#   1. `minReplicas: 0` is **rejected** when the only metric is a Resource metric:
+#      "spec.minReplicas: Invalid value: 0: must be greater than or equal to 1 …
+#      must specify at least one Object or External metric to support scaling to
+#      zero replicas".
+#   2. Even where it is accepted, an HPA scales *to* zero and not *from* it: with
+#      no pods there is no CPU average to act on, so nothing starts them again.
+#
+# So `minReplicas: 1` here is a placeholder for a decision, not the intended
+# design. Waking on request needs an external signal — KEDA with a request-count
+# scaler, Knative's activator, or those two tiers on Cloud Run — and at Autopilot
+# billing floors, leaving them pinned at 1 instead costs roughly $25/month on top
+# of the backend, which is over the $35 ceiling in PLAN.md. The arithmetic and the
+# options are recorded at PLAN.md M3; the placeholder must not outlive that choice.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: learn-anything
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      # Long enough that a second visit in the same session does not find the app
+      # gone, short enough that an unused app still stops billing within a break.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

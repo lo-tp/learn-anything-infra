@@ -208,9 +208,29 @@ each pushes to Artifact Registry and the infra repo consumes digests.
   workload-identity access token and `docker login`s to Artifact Registry with it.
 
 **Done when:** three images sit in Artifact Registry, built by CI and not by hand,
-and each one starts under `docker run` and answers its own first route
-(`/health` for the backend, `/` for the frontend, `/slides/...` or `/api/compile`
-for the sandbox).
+and each one starts under a container runtime and answers its own first route
+(`/health` for the backend, `/` for the frontend, `/slides/...` or
+`/api/compile` for the sandbox).
+
+**Status: one of three.** The backend has a `Dockerfile`, a `.dockerignore` and
+`build-image.yml`, and was verified locally: 48 s warm build, starts as uid 10001,
+`/health` answers `{"status":"ok"}`, `prompts/` is baked in, 17 routes in
+`/openapi.json`, 495 MB. The frontend and sandbox images are not written yet.
+
+Two things worth keeping straight, because both were nearly got wrong:
+
+- **The pipeline builds images, not the laptop.** A local amd64 build was started to
+  let M3's apply be tested early and was deliberately stopped: an image pushed by
+  hand is not the artifact a pipeline built, and M2's whole point is that it is.
+  Local builds exist to *verify a Dockerfile*, which is a different thing.
+- **CI needs one secret:** `PROMPTS_TOKEN` on `lo-tp/learn-anything-backend`, a read
+  token for `lo-tp/learn-anything-prompts`. The job says so and stops without it.
+
+The backend's build does not clone the private `prompts/` submodule itself — that
+would need `git` in the image, i.e. an `apt` step, which on this network was most
+of the build time. CI initialises the submodule from the pinned commit, the local
+build uses the checked-out submodule, and the Dockerfile fails with a named reason
+if it is missing.
 
 ## M3 — Workloads as Kustomize base + overlays
 
@@ -228,6 +248,75 @@ HPAs, resource requests/limits, probes.
 
 **Done when:** `kubectl kustomize overlays/prod` renders, applies cleanly, and
 `kubectl get pods` shows the backend Ready while the other two sit at zero.
+
+**Status: written and validated; not applied.** `manifests/` holds `base/` plus
+`overlays/prod` and `overlays/staging` — Deployments, Services, HPAs, requests and
+limits, probes. Both overlays render, and both pass `kubectl apply --dry-run=server`
+against the live cluster with no errors. Both namespaces exist. What is missing is
+the second half of the gate, and it is missing for named reasons: the frontend and
+sandbox images do not exist yet (M2), the backend image exists only as a local build
+because CI needs the `PROMPTS_TOKEN` secret (a human step), and no Secret values
+have been rendered yet (M4/M7).
+
+### The scale-to-zero design does not survive contact with the API
+
+The cluster rejected it, which is the useful kind of surprise:
+
+```
+HorizontalPodAutoscaler "frontend" is invalid:
+  spec.minReplicas: Invalid value: 0: must be greater than or equal to 1,
+  spec.metrics: Forbidden: must specify at least one Object or External metric
+                to support scaling to zero replicas
+```
+
+Two facts, and the second is the one that matters even if the first is worked
+around:
+
+1. `minReplicas: 0` requires an **Object or External** metric. A CPU- or
+   memory-target HPA cannot go to zero at all.
+2. An HPA cannot scale **from** zero: with no pods there is no utilisation to act
+   on. Something outside the HPA has to start the pods when a request arrives.
+
+The cost of not solving it is not small, at the Autopilot billing floor (requests
+rounded up in 250 mCPU steps, with a minimum pod size; the unit rates below are
+list-rate estimates back-derived from Google's own cost calculator and are replaced
+by the invoice in M10):
+
+| state | estimate |
+|---|---|
+| one pod at the billing floor (250m CPU / 0.5 GiB) | ~$0.018/hr ≈ **$12.7/month** |
+| backend only (frontend + sandbox asleep) | ~$12.7/month |
+| all three pinned at 1 replica | ~$38/month — **over the $35 ceiling** |
+
+So scale-from-zero is not a nicety of this design; the budget depends on it. The
+options, in the order I would weigh them:
+
+- **(A) KEDA + an external request-count scaler** (Prometheus/Stackdriver). Keeps
+  everything in the cluster and teaches the most; the KEDA controller is itself a
+  always-on pod, i.e. part of a floor-sized pod's worth of cost.
+- **(B) Knative on GKE.** Purpose-built scale-from-zero with a request-queueing
+  activator; a second system to learn, and its own control-plane pods.
+- **(C) Those two tiers on Cloud Run, backend stays on GKE.** Cheapest when idle
+  and wakes on request; ADR 0001 rejected Cloud Run *for the whole system* because
+  it optimises away the Kubernetes learning, and this keeps the learning on the
+  tier where state actually lives.
+- **(D) Pin all three at 1.** Simplest, and it breaks the $35 ceiling above.
+
+The manifests carry `minReplicas: 1` as a **placeholder**, with that word in the
+comment, so the compromise is visible where the decision has to be acted on rather
+than buried in a document. This is a decision for you: **(A), (B), (C) or (D)**.
+
+Other things the apply surfaced, recorded so they are not rediscovered:
+
+- The backend refuses to start without `DATABASE_URL`, `JWT_SECRET` and
+  `OPENAI_API_KEY` — three Secrets before a pod is Ready, and `/health` answers
+  without touching the database, which is exactly why the readiness probe uses it.
+- `.env.example` in the backend lists `DATABASE_URL` and `JWT_SECRET` but not
+  `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `LLM_MODEL`: it is behind the code.
+- Pod security contracts in the manifests (`runAsNonRoot: true`, capabilities
+  dropped) are assertions about images two of which do not exist yet; the
+  frontend and sandbox Dockerfiles must set a non-root user or their pods will not
+  start.
 
 ## M4 — Postgres in-cluster
 

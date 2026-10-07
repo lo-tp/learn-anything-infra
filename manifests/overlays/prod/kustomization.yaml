@@ -1,0 +1,40 @@
+namespace: learn-anything
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+# Images: nothing here pins them yet, and that is the honest state — no image has
+# been built by a pipeline (M2). The base's `:placeholder` tags are what make that
+# visible in a rendered manifest instead of a stale digest that looks authoritative.
+# The deploy step in CI sets them by digest:
+#
+#   kustomize edit set image \
+#     <registry>/learn-anything-backend=<registry>/learn-anything-backend@sha256:…
+#
+# A digest rather than a tag because a tag can be re-pointed under a running
+# rollout and a digest cannot (PLAN.md M5).
+configMapGenerator:
+  # Consumed by the backend only (the frontend has no runtime config; the sandbox
+  # has its own). These are origins, not secrets: what the browser is told to call
+  # and what this service calls, both declared in one place.
+  - name: backend-config
+    literals:
+      - FRONTEND_DOMAIN=https://learn.lotp.xyz
+      - SANDBOX_URL=http://sandbox.learn-anything.svc.cluster.local:80
+      - LOG_LEVEL=INFO
+
+  # Consumed by the sandbox only. `NEXT_PUBLIC_BACKEND_URL` looks like a
+  # build-time name but is read server-side here (the /slides route fetches the
+  # slide source), so it is runtime configuration and it points at the cluster's
+  # internal address: that hop never leaves the VPC and should not pay for a trip
+  # out through the load balancer.
+  - name: sandbox-config
+    literals:
+      - ALLOWED_FRAME_ANCESTORS=https://learn.lotp.xyz
+      - NEXT_PUBLIC_BACKEND_URL=http://backend.learn-anything.svc.cluster.local:80
+
+# The generated names get a content hash, so changing a value here changes the pod
+# template and the Deployment actually rolls. The cost is that superseded
+# ConfigMaps stay behind; `kubectl get configmap` in this namespace is not a lie,
+# just a little historical.

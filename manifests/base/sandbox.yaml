@@ -1,0 +1,129 @@
+# The Sandbox: compiles and validates slide code per request. Its `/api/compile`
+# is an internal call — the backend is the only caller — so it has no public route
+# of its own beyond `/slides/*` (PLAN.md M6), and the CSP `frame-ancestors` header
+# it sends is what keeps the iframe executable, not a NetworkPolicy pretending to.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox
+  labels:
+    app.kubernetes.io/name: sandbox
+    app.kubernetes.io/part-of: learn-anything
+    app.kubernetes.io/component: compile
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sandbox
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sandbox
+        app.kubernetes.io/part-of: learn-anything
+        app.kubernetes.io/component: compile
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: sandbox
+          image: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-sandbox:placeholder
+          ports:
+            - name: http
+              containerPort: 3001
+          env:
+            # Stated next to containerPort on purpose: the port the container
+            # listens on and the port the Service targets have to agree, and a
+            # mismatch between two files two directories apart is a bad way to
+            # find that out.
+            - name: PORT
+              value: "3001"
+          envFrom:
+            - configMapRef:
+                name: sandbox-config
+            - secretRef:
+                name: sandbox-env
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          # No readOnlyRootFilesystem here, unlike the other two: the compile gate
+          # writes the bundle it is about to render into its own working directory,
+          # and reads `out/slides/*` from disk on every request. Making the
+          # filesystem read-only is a change to how that code works, not a flag to
+          # set here.
+          #
+          # TCP rather than HTTP: this container has no dependency-free route to
+          # GET. /slides/{id} needs the service token and the backend;
+          # /api/compile needs a POST body. "Accepting connections" is the honest
+          # statement this probe can make.
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandbox
+  labels:
+    app.kubernetes.io/name: sandbox
+    app.kubernetes.io/part-of: learn-anything
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: sandbox
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Same placeholder as the frontend's HPA, and the same reason, written out there
+# once: `minReplicas: 0` needs an Object/External metric, and a Resource-metric HPA
+# cannot scale from zero anyway. This one is the more expensive to leave pinned, in
+# latency rather than money — it is called by the backend in the middle of a slide
+# generation, and a cold start here lands inside a request that is already slow.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sandbox
+  labels:
+    app.kubernetes.io/name: sandbox
+    app.kubernetes.io/part-of: learn-anything
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sandbox
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      # Shorter than the frontend's: this one is called by the backend in the
+      # middle of a generation, and if it is gone the backend waits for a cold
+      # start inside a request that is already slow.
+      stabilizationWindowSeconds: 120
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

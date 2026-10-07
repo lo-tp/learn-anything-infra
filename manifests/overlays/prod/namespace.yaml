@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: learn-anything
+  labels:
+    app.kubernetes.io/part-of: learn-anything
+    # Cost attribution: PLAN.md M10 reads a per-component cost table off the bill,
+    # and GKE cost allocation works off these labels.
+    learn-anything/environment: prod

@@ -1,0 +1,8 @@
+# Strategic merge patch, applied by overlays/staging. See the comment in that
+# kustomization.yaml for why staging is allowed to sleep and prod is not.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 0

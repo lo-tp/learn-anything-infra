@@ -46,7 +46,19 @@ assumption: see the billing-export check added to Consequences.
   Spot node is the free-tier-shaped answer, or the cluster is deleted and
   re-created from Terraform when needed — ~10 minutes of lead time, which is
   acceptable for a project with no traffic to lose.
-- Frontend and Sandbox scale to **zero**. An unused app is nearly free, and the
-  first visitor pays a cold start of tens of seconds. That is bought knowingly,
-  not discovered later; the backend is exempt (see ADR 0003) because its cold
-  start would stack on top of multi-minute LLM graphs.
+- Frontend and Sandbox are meant to scale to **zero**: an unused app is nearly
+  free, and the first visitor pays a cold start of tens of seconds. That is bought
+  knowingly, not discovered later; the backend is exempt (see ADR 0003) because its
+  cold start would stack on top of multi-minute LLM graphs.
+- **Correction, found when M3's manifests were applied to the cluster.** A
+  HorizontalPodAutoscaler does not deliver this. `minReplicas: 0` is rejected
+  unless an Object or External metric is supplied, and even where it is accepted an
+  HPA cannot scale *from* zero — with no pods there is no utilisation to act on.
+  Waking on request needs something outside the HPA (KEDA with a request-count
+  scaler, Knative's activator, or those two tiers on Cloud Run). This is not a
+  detail: at Autopilot billing floors, pinning those two tiers at one replica costs
+  roughly $25/month more than letting them sleep, which is over the budget this ADR
+  was written to fit. The options and the arithmetic are at PLAN.md M3, where the
+  choice is recorded as open; the choice of Autopilot itself is not reconsidered
+  here, because the reason for it — learning Kubernetes on the tier where state
+  actually lives — is unaffected.
