@@ -15,8 +15,16 @@ foundation. The *why* behind each load-bearing choice lives in
   credit expires 2027-01-06** (billing account `01C0D4-4C9481-8E0DC4`), which
   implies a trial start of 2026-10-08 and leaves **91 days from 2026-10-07**.
   That makes the hard ceiling **$3.30/day for the platform** — not the earlier
-  ~$3.33 estimate — and the design target I hold myself to is **platform
-  ≤ $35/month**, the rest headroom for egress and mistakes.
+  ~$3.33 estimate. The design target in the first draft of this plan was **platform
+  ≤ $35/month**; it was retired on 2026-10-08 when option (D) was chosen (see M3's
+  option table and ADR 0001's amendment): three application tiers pinned at one
+  replica is **~$50/month of pods at Autopilot's per-pod floor**, before any
+  load-balancer line, and no amount of tuning requests changes that, because the
+  billing floor (0.25 vCPU / 1 GiB per pod) is above what the containers ask for.
+  The number now held to is the credit's — **stay under $3.30/day through
+  2027-01-06** — with the Terraform budget alert set at $70/month as a tripwire
+  for *unusual* spend, not as a target (an alert that fires every month is
+  noise). Read and recalibrate it at the M10 checkpoints from billed figures.
 - **The credit belongs to the billing account, not to this project — and you have
   confirmed this project is the only thing drawing on it.** M1 still creates two
   budgets, but their jobs differ now: the one filtered to this project measures
@@ -144,8 +152,9 @@ with remote state in that bucket: every API the project needs
 **Autopilot** cluster in the `asia-east2` **region**, Artifact Registry with a tag
 cleanup policy, the `pg_dump` bucket (separate from the state bucket on purpose),
 Secret Manager entries, the CI identity with Workload Identity Federation, and
-**budget alerts that include credits**. A monthly budget of the $35 platform
-ceiling, alerting at 50/75/100% with `credit_types_treatment =
+**budget alerts that include credits**. A monthly budget (currently $70 — a
+tripwire above the chosen topology's floor, see the constraint above and
+`var.monthly_platform_budget_usd`), alerting at 50/75/100% with `credit_types_treatment =
 INCLUDE_ALL_CREDITS`: while the trial credit hides the cost on the bill, the
 budget still measures real consumption, which is the whole point of the
 90-day constraint. Terraform creates all of it — with one deliberate exception,
@@ -367,6 +376,11 @@ options, in the order I would weigh them:
   it optimises away the Kubernetes learning, and this keeps the learning on the
   tier where state actually lives.
 - **(D) Pin all three at 1.** Simplest, and it breaks the $35 ceiling above.
+  **← chosen, 2026-10-08.** Not because it is cheap: because (A) cannot deliver a
+  wake a browser would not notice, (B) adds a second control plane whose own pods
+  sit at the same billing floor, and (C) would put the two UI tiers on a platform
+  this project is here to learn past. The cost is accepted out loud, in the alert
+  threshold and in `replica-floor.yaml`, rather than argued away.
 
 **Measured, which is what (D) is now and why it is still not a decision.** A
 browser at `learn.lotp.xyz` got a 502 because the URL map's backend had no
