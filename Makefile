@@ -9,28 +9,40 @@ AUTH       = GOOGLE_APPLICATION_CREDENTIALS=$(GCRED)
 # Which root to act on. bootstrap/ first, then gcp/.
 ROOT ?= gcp
 
-tf-fmt:
+# Bare `make` prints this rather than running something: an infrastructure
+# Makefile whose default action is `terraform fmt` is a way to spend an afternoon
+# by accident. `make help` says the same on purpose.
+.DEFAULT_GOAL := help
+
+help: ## this list
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo ''
+	@echo 'Variables: ROOT=bootstrap|gcp (default gcp), NS=$(NS), ENV=prod|staging (deploy),'
+	@echo '           SECRETS=name,name (render one), CHECK_ONLY=1 (validate, do not write),'
+	@echo '           TF_ARGS=-auto-approve, SKIP_MIGRATE=1 (deploy).'
+
+tf-fmt: ## format the Terraform roots
 	terraform fmt -recursive
 
-tf-init:
+tf-init: ## terraform init in the chosen ROOT
 	cd $(ROOT) && $(AUTH) $(GCP_ENV) terraform init
 
-tf-plan:
+tf-plan: ## terraform plan in $(ROOT), through the proxy
 	cd $(ROOT) && $(AUTH) $(GCP_ENV) terraform plan
 
-tf-apply:
+tf-apply: ## terraform apply in $(ROOT), asking first
 	cd $(ROOT) && $(AUTH) $(GCP_ENV) terraform apply $(TF_ARGS)
 
 # Non-interactive apply, for when the review already happened: `make tf-apply-yes`.
 # Split rather than the default, because an apply that never asks is an apply that
 # can spend money while you are not looking.
-tf-apply-yes:
+tf-apply-yes: ## apply without asking, when the review already happened
 	$(MAKE) tf-apply TF_ARGS=-auto-approve
 
-tf-output:
+tf-output: ## show the chosen root's outputs
 	cd $(ROOT) && $(AUTH) $(GCP_ENV) terraform output
 
-tf-bootstrap:
+tf-bootstrap: ## init, apply and print outputs for the bootstrap/ root
 	$(MAKE) tf-init tf-apply tf-output ROOT=bootstrap
 
 # kubectl authenticates through gcloud and gke-gcloud-auth-plugin, which needs the
@@ -42,12 +54,12 @@ SDK        = $(CURDIR)/google-cloud-sdk/bin
 KUBECONFIG ?= $(CURDIR)/.kubeconfig-gke
 kenv = PATH="$(SDK):$(PATH)" KUBECONFIG=$(KUBECONFIG) $(GCP_ENV)
 
-kcreds:
+kcreds: ## point .kubeconfig-gke at the cluster, as the human identity
 	$(kenv) gcloud container clusters get-credentials learn-anything --region=asia-east2
 
 # The M1 readiness check. `get nodes` reporting nothing is the expected state for
 # an idle Autopilot cluster; the control plane answering is the part that matters.
-kcheck:
+kcheck: ## prove the control plane answers (no nodes on an idle Autopilot cluster is normal)
 	$(kenv) kubectl get --raw /readyz
 	$(kenv) kubectl get ns
 	$(kenv) kubectl get nodes || true
@@ -73,7 +85,7 @@ secrets: ## render Secret objects from Secret Manager (SECRETS=… to target, CH
 # migrated and what gets deployed cannot disagree. `make deploy ENV=staging` for
 # the other one; staging's database is asleep, so it needs SKIP_MIGRATE=1 or a
 # woken database.
-deploy:
+deploy: ## the M5 order: migrate, apply, wait (ENV=prod|staging)
 	$(kenv) NAMESPACE=$(NS) ./scripts/deploy.sh $(ENV)
 
-.PHONY: tf-fmt tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck
+.PHONY: help tf-fmt tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck
