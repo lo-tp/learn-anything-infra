@@ -311,9 +311,10 @@ through its own probe; the frontend and sandbox are at zero replicas by patch
 (`asleep.yaml`) — the gate clause "the other two sit at zero", arrived at by a
 different route than the HPA placeholder originally imagined. Their images now exist
 and are pinned by digest, so what still keeps them from serving is the **wake-up
-floor** (`replica-floor.yaml`, option D below — taken temporarily on 2026-10-08
-after a browser visit started returning 502, see the option table) and **M6's
-ingress and hostnames**, which is done. The
+floor** (`replica-floor.yaml`, option D below — chosen on 2026-10-08, after a
+browser visit to `learn.lotp.xyz` returned the 502 that an un-woken zero produces).
+KEDA is not installed and is no longer the plan for these tiers; see the option
+table and ADR 0001's amendment for why. M6's ingress and hostnames are done. The
 HPA placeholders are gone from both: a `minReplicas: 1` HorizontalPodAutoscaler
 forbids the zero that ADR 0001's design requires, and KEDA expects to own that
 range. What is still missing for this gate is the same named list: those
