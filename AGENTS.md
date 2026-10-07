@@ -216,6 +216,11 @@ own skips the gate; use it only for changes that cannot touch the schema.
   into the cluster Secrets the workloads read (`backend-env`, `sandbox-env`,
   `database-env`) and tells you, out loud, when an entry still holds a placeholder
   — which `openai-api-key` does until M8.
+- **A CI workflow's Workload Identity provider is addressed by project *number*:**
+  `projects/358071090957/locations/global/workloadIdentityPools/…`. With the project
+  *id* in that path, STS answers `invalid_target` and claims the provider may not
+  exist. Copy it from `terraform output workload_identity_provider_names` rather
+  than writing it out — that path cost one failed pipeline run to learn.
 
 ## Datastore
 

@@ -212,19 +212,40 @@ and each one starts under a container runtime and answers its own first route
 (`/health` for the backend, `/` for the frontend, `/slides/...` or
 `/api/compile` for the sandbox).
 
-**Status: one of three.** The backend has a `Dockerfile`, a `.dockerignore` and
-`build-image.yml`, and was verified locally: 48 s warm build, starts as uid 10001,
-`/health` answers `{"status":"ok"}`, `prompts/` is baked in, 17 routes in
-`/openapi.json`, 495 MB. The frontend and sandbox images are not written yet.
+**Status: images one of three; the pipeline is proven end to end.** The backend
+has a `Dockerfile`, a `.dockerignore` and `build-image.yml`, and CI builds and
+pushes it: `main` → an image tagged `sha-<commit>` in Artifact Registry, and
+production is now pinned to one of those digests (`dd32533a…`, from `fdb0b377`).
+Locally it was verified earlier: 48 s warm build, starts as uid 10001, `/health`
+answers `{"status":"ok"}`, `prompts/` is baked in, 17 routes, 495 MB. The frontend
+and sandbox images are not written yet.
+
+The first CI runs failed twice, in ways no local build could have taught:
+
+- **The Workload Identity provider path is `projects/<PROJECT_NUMBER>/…`, not
+  `projects/<PROJECT_ID>/…`.** STS answered `invalid_target` and a message saying
+  the provider might not exist — it was present and active. The authoritative copy
+  of that path is now `terraform output workload_identity_provider_names`, so the
+  frontend and sandbox workflows can be written correctly the first time.
+- **`docker/login-action` received an empty password** from
+  `google-github-actions/auth`'s `access_token` output and failed with "Password
+  required". The job mints the token with `gcloud auth print-access-token` from the
+  credential file the auth step exports; if that is ever empty again, the error
+  names the credential rather than a missing input.
 
 Two things worth keeping straight, because both were nearly got wrong:
 
-- **The pipeline builds images, not the laptop.** A local amd64 build was started to
-  let M3's apply be tested early and was deliberately stopped: an image pushed by
-  hand is not the artifact a pipeline built, and M2's whole point is that it is.
-  Local builds exist to *verify a Dockerfile*, which is a different thing.
-- **CI needs one secret:** `PROMPTS_TOKEN` on `lo-tp/learn-anything-backend`, a read
-  token for `lo-tp/learn-anything-prompts`. The job says so and stops without it.
+- **The pipeline builds images, not the laptop.** For a while production pointed at
+  a hand-built amd64 image because CI was not working yet — that was a temporary
+  state, it is over, and the three laptop-built tags were deleted from the registry
+  so that production cannot point at something no pipeline produced. Local builds
+  exist to *verify a Dockerfile*, which is a different thing (and the amd64
+  requirement is a fact about the cluster, not a preference: `podman build
+  --platform linux/amd64`).
+- **`PROMPTS_TOKEN` is set** on `lo-tp/learn-anything-backend` (a read token for
+  `lo-tp/learn-anything-prompts`, supplied by you). Without it the job stops at the
+  submodule step and says so — which is the behaviour that made the missing secret
+  obvious rather than mysterious.
 
 The backend's build does not clone the private `prompts/` submodule itself — that
 would need `git` in the image, i.e. an `apt` step, which on this network was most
@@ -418,9 +439,9 @@ reach its schema.
 a visible Job log, and the previous Deployment is left serving.
 
 **Status: applied, and the gate works in both directions (2026-10-07).**
-Production is running: one backend pod (image `local-d93da1ad`, digest `d1e0c607…`)
-serving `/health` through its own readiness probe, next to the database. The two
-frontend tiers are at zero (no images yet — see below).
+Production is running: one backend pod (image digest `dd32533a…`, built by CI from
+`fdb0b377`) serving `/health` through its own readiness probe, next to the
+database. The two frontend tiers are at zero (no images yet — see below).
 
 The mechanism is `scripts/deploy.sh` (and `make deploy`), in that order: read the
 image the overlay names → run *that* image's `alembic upgrade head` as a Job and
@@ -466,13 +487,15 @@ What the design had to learn about Jobs, which is all in `deploy.sh` comments:
   ImagePullBackOff, which is the correct symptom for "the overlay never said what
   to run". Worth remembering when something looks like a registry problem.
 
-Two things that are *not* finished inside this milestone, and one of them is why
-the image is a hand-built one:
+Two things that are *not* finished inside this milestone, one of which moved while
+this was being written:
 
-- **CI still cannot build the backend image**: `PROMPTS_TOKEN` is not a repository
-  secret yet (a human step, unchanged since M2). The digest in the production
-  overlay is a local `podman build --platform linux/amd64` of the commit its tag
-  names, labelled as such in the file. The first CI build replaces it.
+- **The image production runs is the pipeline's.** `PROMPTS_TOKEN` is set, CI builds
+  and pushes `sha-<commit>`, and the production digest is one of those; the three
+  laptop-built tags were deleted so no future deploy can reach for them. The gate
+  itself ran against that CI image: `migrate-dd32533ac7d8-…` completed, the
+  Deployment rolled onto it, `/health` answered, and `alembic_version` still reads
+  `c3d4e5f6a7b8`.
 - **`OPENAI_API_KEY` in Secret Manager is still a placeholder**
   (`REPLACE_ME-openai-api-key-not-yet-supplied`). The pod starts because the
   variable exists; the first real LLM call would not work. `make secrets` prints

@@ -16,6 +16,22 @@ output "workload_identity_providers" {
   description = "Which GitHub repository deploys as which service account."
 }
 
+output "workload_identity_provider_names" {
+  value = {
+    for repo, p in google_iam_workload_identity_pool_provider.github :
+    repo => p.name
+  }
+  description = <<-EOT
+    The provider resource path each repository's CI job puts in
+    `workload_identity_provider:`. Printed rather than hand-written because the
+    canonical name is `projects/<PROJECT_NUMBER>/…`: STS answers a
+    `projects/<PROJECT_ID>/…` audience with `invalid_target` (“pool or provider is
+    disabled or deleted or … doesn't exist”), which reads like the resource is
+    missing when it is present and active. One workflow learned that the hard way;
+    this output is how the other two do not have to.
+  EOT
+}
+
 output "state_bucket" {
   value = "learn-anything-tfstate"
 }

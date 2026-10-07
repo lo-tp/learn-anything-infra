@@ -21,19 +21,21 @@ patches:
 # `:placeholder`, which is a visible gap rather than a plausible-looking stale
 # digest (M2 builds them; CI's deploy step will set all three at once).
 #
-# The backend's image was built on this laptop with
-# `podman build --platform linux/amd64`, because CI still cannot: `PROMPTS_TOKEN`
-# is not a repository secret yet and the backend build reads that private prompts
-# repository. The tag names the commit it came from, so the claim is checkable; it
-# is not the pipeline's artifact, and the first CI build replaces it.
+# The backend's image is built by the pipeline in the backend repository
+# (.github/workflows/build-image.yml): the tag is `sha-<commit>`, so the commit a
+# review saw is the commit that runs. It arrived at that by way of two fixes to
+# that workflow — a WIF provider path in the project-number form STS accepts, and
+# minting the registry token with gcloud rather than trusting an action output.
 #
-# What is *not* here is a lesson: digest 5b52c5e9… (16bc52f6) is the build whose
-# `USER app` made `runAsNonRoot: true` unverifiable — the pod sat in
-# CreateContainerConfigError while its own migration Job ran happily. That image is
-# still in the registry; it is simply no longer what production points at.
+# What is *not* here is a lesson: digest 5b52c5e9… (16bc52f6) is the hand-built
+# image whose `USER app` made `runAsNonRoot: true` unverifiable — its pod sat in
+# CreateContainerConfigError while its own migration Job ran happily. That build and
+# the two other laptop-built ones (local-d93da1ad, local-m5-probe) have since been
+# deleted from the registry: production should not be able to point at something no
+# pipeline produced.
 images:
   - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-backend
-    digest: sha256:d1e0c607518989d0dc03e8cf17e3408fb6a42ead03e5d08b7ef267c67d4ee4d3  # local-d93da1ad
+    digest: sha256:dd32533ac7d83b47731e4e7c92e8c75a235e8cf9330b47005da6fee9a65c1d8f  # sha-fdb0b377 (CI, fdb0b377)
 configMapGenerator:
   # Consumed by the backend only (the frontend has no runtime config; the sandbox
   # has its own). These are origins, not secrets: what the browser is told to call
