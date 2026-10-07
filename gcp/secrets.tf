@@ -1,6 +1,10 @@
-# Entries only. Values arrive by another route (M7: CI reads them and renders
-# Kubernetes Secrets; M4 generates the database password), and no value is ever
-# written into a file in this repo.
+# Entries only. Values arrive by another route, and the split is deliberate:
+# values that are *ours* are generated (the database password in database.tf, the
+# two shared tokens in app_secrets.tf); values that are *borrowed* — the LLM key,
+# the prompts repository token — are entered by a person, because generating a
+# placeholder for those only hides the fact that nobody has given the value yet.
+# M7 is the step that copies whichever kind into Kubernetes Secrets at deploy time.
+# No value is ever written into a file in this repo.
 resource "google_secret_manager_secret" "shared" {
   for_each = toset(var.secrets)
 

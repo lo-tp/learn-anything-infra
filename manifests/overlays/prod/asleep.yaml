@@ -1,0 +1,28 @@
+# Frontend and sandbox: zero replicas.
+
+# Two separate reasons point at the same number, so the patch is one file rather
+# than two.
+#
+#   * Right now their images do not exist (M2 has not built them), so a pod here
+#     would sit in ImagePullBackOff and still be billed: Autopilot charges a
+#     scheduled pod's requests whether or not its container ever starts.
+#   * In the intended design they are also meant to be at zero when nobody is
+#     using them (ADR 0001, and the scale-from-zero choice at PLAN.md M3).
+#
+# So this is not a workaround standing in for the design; it is the design's idle
+# state, arrived at early. When KEDA's ScaledObjects land, they take over this
+# number and nothing here needs to be undone — a ScaledObject driving a Deployment
+# that is already at zero is exactly what it expects to find.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox
+spec:
+  replicas: 0

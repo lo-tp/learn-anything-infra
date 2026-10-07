@@ -184,6 +184,39 @@ The recovery is `terraform force-unlock <lock-id>` (the ID is in the error text)
 then `terraform import` the cluster, then apply — never let a second apply create a
 second cluster.
 
+## Deploys
+
+A deploy is an order, not a command: migrations first, then the workloads, then
+the rollout. `make deploy` (which is `scripts/deploy.sh`) does that, and the point
+of it is that a failed migration stops the deploy with the Job's log printed and
+nothing else touched, so what was serving keeps serving. `kubectl apply -k` on its
+own skips the gate; use it only for changes that cannot touch the schema.
+
+- **What production runs is written in `manifests/overlays/prod/kustomization.yaml`
+  under `images:`** — a digest, with the tag in a comment beside it so a human can
+  find the build. That block is the record, and `git diff` of it is the approval.
+  CI updates it with `kustomize edit set image`; nothing passes an image on the
+  command line, which is why the Job that migrates and the Deployment that serves
+  cannot drift apart.
+- **Image contracts** (they are enforced by the cluster, so a Dockerfile that
+  ignores them fails at pod start rather than at review): a **numeric `USER`** —
+  `runAsNonRoot: true` is verified numerically and a named user becomes
+  `CreateContainerConfigError`; the uid is spelled once, in the image, never
+  again in a manifest; linux/amd64; and a dependency-free readiness route where one
+  exists.
+- **Migration Jobs are named after what they run** (`migrate-<image digest>-<job
+  template hash>`), because a Job's pod template is immutable. A completed one is
+  skipped, not re-run; a failed one blocks the deploy until there is a new image
+  or a fixed migration.
+- **Convergence is checkable**: `kubectl diff` against
+  `kubectl kustomize manifests/overlays/prod` should be empty. A non-empty diff is
+  either an unapplied change or something edited in the cluster, and both are
+  facts worth having before the next deploy.
+- **Secret values live in Secret Manager, never here.** `make secrets` renders them
+  into the cluster Secrets the workloads read (`backend-env`, `sandbox-env`,
+  `database-env`) and tells you, out loud, when an entry still holds a placeholder
+  — which `openai-api-key` does until M8.
+
 ## Datastore
 
 The backend relies on a PostgreSQL database, run in-cluster as a StatefulSet with

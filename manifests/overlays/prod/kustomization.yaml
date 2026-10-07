@@ -4,16 +4,36 @@ resources:
   - namespace.yaml
   - ../../base
 
-# Images: nothing here pins them yet, and that is the honest state — no image has
-# been built by a pipeline (M2). The base's `:placeholder` tags are what make that
-# visible in a rendered manifest instead of a stale digest that looks authoritative.
-# The deploy step in CI sets them by digest:
+patches:
+  # The two tiers that have no image yet, and that are meant to be idle when
+  # unused. Read that file before changing this number: it is a bill, and a pod
+  # stuck in ImagePullBackOff is billed exactly like one that starts.
+  - path: asleep.yaml
+
+# What production is running, stated here rather than passed in at deploy time:
+# this block is the record, and `git diff` of it is the thing a person approves.
 #
-#   kustomize edit set image \
-#     <registry>/learn-anything-backend=<registry>/learn-anything-backend@sha256:…
+# By digest, never tag — a tag can be re-pointed under a running rollout and a
+# digest cannot. The tag is written beside the digest only so a human can find the
+# build in the registry console afterwards; nothing in the cluster reads it.
 #
-# A digest rather than a tag because a tag can be re-pointed under a running
-# rollout and a digest cannot (PLAN.md M5).
+# The frontend and sandbox have no image to name, so they keep the base's
+# `:placeholder`, which is a visible gap rather than a plausible-looking stale
+# digest (M2 builds them; CI's deploy step will set all three at once).
+#
+# The backend's image was built on this laptop with
+# `podman build --platform linux/amd64`, because CI still cannot: `PROMPTS_TOKEN`
+# is not a repository secret yet and the backend build reads that private prompts
+# repository. The tag names the commit it came from, so the claim is checkable; it
+# is not the pipeline's artifact, and the first CI build replaces it.
+#
+# What is *not* here is a lesson: digest 5b52c5e9… (16bc52f6) is the build whose
+# `USER app` made `runAsNonRoot: true` unverifiable — the pod sat in
+# CreateContainerConfigError while its own migration Job ran happily. That image is
+# still in the registry; it is simply no longer what production points at.
+images:
+  - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-backend
+    digest: sha256:d1e0c607518989d0dc03e8cf17e3408fb6a42ead03e5d08b7ef267c67d4ee4d3  # local-d93da1ad
 configMapGenerator:
   # Consumed by the backend only (the frontend has no runtime config; the sandbox
   # has its own). These are origins, not secrets: what the browser is told to call

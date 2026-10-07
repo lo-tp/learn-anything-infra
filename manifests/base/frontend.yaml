@@ -88,39 +88,10 @@ spec:
 #   2. Even where it is accepted, an HPA scales *to* zero and not *from* it: with
 #      no pods there is no CPU average to act on, so nothing starts them again.
 #
-# So `minReplicas: 1` here is a placeholder for a decision, not the intended
-# design. Waking on request needs an external signal — KEDA with a request-count
-# scaler, Knative's activator, or those two tiers on Cloud Run — and at Autopilot
-# billing floors, leaving them pinned at 1 instead costs roughly $25/month on top
-# of the backend, which is over the $35 ceiling in PLAN.md. The arithmetic and the
-# options are recorded at PLAN.md M3; the placeholder must not outlive that choice.
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: frontend
-  labels:
-    app.kubernetes.io/name: frontend
-    app.kubernetes.io/part-of: learn-anything
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: frontend
-  minReplicas: 1
-  maxReplicas: 2
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70
-  behavior:
-    scaleDown:
-      # Long enough that a second visit in the same session does not find the app
-      # gone, short enough that an unused app still stops billing within a break.
-      stabilizationWindowSeconds: 300
-      policies:
-        - type: Pods
-          value: 1
-          periodSeconds: 60
+# So there is **no HPA in this file**. The placeholder that used to be here said
+# `minReplicas: 1`, which would have scheduled a paying pod for an image that does
+# not exist yet and would have fought the zero-replica state that scale-from-zero
+# requires. The chosen answer is KEDA (PLAN.md M3, option A): a ScaledObject owns
+# waking these two on request, and a Deployment they manage stays at zero. The
+# cost of that choice is recorded there honestly — KEDA's own pods are a
+# floor-priced always-on set, roughly what pinning these two would cost.

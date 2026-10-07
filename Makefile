@@ -65,4 +65,12 @@ PROJECT_ID := $(shell $(AUTH) $(GCP_ENV) terraform -chdir=gcp output -raw projec
 secrets:
 	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/render-secrets.sh $(NS) $(SECRETS)
 
-.PHONY: tf-fmt tf-init tf-plan tf-apply tf-apply-yes tf-output secrets kcreds kcheck
+# The M5 order: migration Job first, then the workloads, then the rollout. It reads
+# the image out of the overlay rather than from the command line, so what gets
+# migrated and what gets deployed cannot disagree. `make deploy ENV=staging` for
+# the other one; staging's database is asleep, so it needs SKIP_MIGRATE=1 or a
+# woken database.
+deploy:
+	$(kenv) NAMESPACE=$(NS) ./scripts/deploy.sh $(ENV)
+
+.PHONY: tf-fmt tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck

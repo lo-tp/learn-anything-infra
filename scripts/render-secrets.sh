@@ -63,8 +63,10 @@ DB_HOST=learn-anything-db
 namespace="${1:-}"; shift || true
 [ -n "$namespace" ] || usage
 
+# Sorted, so a full run is reproducible in its output rather than dependent on the
+# order bash happens to iterate a associative array in.
 targets=("$@")
-[ "${#targets[@]}" -gt 0 ] || targets=("${!TARGETS[@]}")
+[ "${#targets[@]}" -gt 0 ] || targets=($(printf '%s\n' "${!TARGETS[@]}" | sort))
 
 read_secret() {
   # `latest` rather than a pinned version: the value a deploy needs is the current
@@ -99,11 +101,12 @@ for target in "${targets[@]}"; do
     literal_args+=("--from-literal=DATABASE_URL=postgresql://${DB_USER}:${password}@${DB_HOST}:5432/${DB_NAME}")
   fi
 
-  # `--dry-run=server` + apply: the server validates the object (including the
-  # namespace existing) and apply is idempotent, so re-running this is a refresh
-  # rather than a conflict.
+  # Build the object client-side, then apply it with a *server* dry-run first:
+  # `create --dry-run=server` would refuse an object that already exists, which is
+  # exactly the re-run case this script has to survive. Server validation still
+  # happens, on the path that is allowed to update.
   kubectl -n "$namespace" create secret generic "$target" \
     "${literal_args[@]}" \
-    --dry-run=server -o yaml | kubectl apply -f -
+    --dry-run=client -o yaml | kubectl apply --dry-run=server -f -
   echo "rendered $target in namespace '$namespace' (${#literal_args[@]} args)" >&2
 done
