@@ -1,13 +1,15 @@
 # learn-anything-infra
 
 Infrastructure and deployment for the Learn Anything product. Everything here is
-declared as code: Terraform for cloud and DNS resources, Kubernetes manifests
+declared as code: Terraform for the cloud resources, Kubernetes manifests
 built with Kustomize (a `base/` plus `overlays/prod` and `overlays/staging`) for
 workloads. Hand-edited cloud consoles and imperative `kubectl apply` of
 undocumented manifests are out of sync with this repo by definition; treat this
 repo as the single source of truth. Nothing here is provisioned with `gcloud`: the
-GCP project, its APIs, the cluster, DNS and the budgets are all Terraform's, and
-`kubectl` only talks to a cluster it did not create. The one Google-supplied
+GCP project, its APIs, the cluster, the storage and the budgets are all
+Terraform's, and `kubectl` only talks to a cluster it did not create. One thing
+Terraform deliberately does not create: the DNS records
+([ADR 0004](./docs/adr/0004-dns-stays-at-namecheap.md)). The one Google-supplied
 binary in the design is `gke-gcloud-auth-plugin`, a credential helper `kubectl`
 needs to authenticate — it manages nothing.
 
@@ -68,11 +70,17 @@ server, the volume, the credentials and the dumps — not tables.
 
 ## DNS
 
-The domain is registered with Namecheap; the DNS zone itself lives in Cloud DNS,
-managed by Terraform, so records stay declarative. Nameserver delegation at the
-registrar is a human step. Before any delegation change, carry every existing
-record into the new zone — `blog.lotp.xyz` in particular. TLS certificates and
-Ingress hostnames must match the records declared here.
+The domain is registered with Namecheap **and its DNS stays there**: the zone is
+not moved to the cloud provider, and the nameservers are never changed.
+`learn.lotp.xyz`, `api.lotp.xyz`, `sandbox.lotp.xyz` and the staging hosts are A
+records entered by hand, because Namecheap's API allowlists single IPs rather than
+ranges and so cannot be driven from CI ([ADR 0004](./docs/adr/0004-dns-stays-at-namecheap.md)).
+The record set is still declared here as a Terraform variable, and
+`terraform output dns_records` prints exactly what belongs in the dashboard — when
+the two disagree, this repo is right and the dashboard is wrong.
+
+`blog.lotp.xyz` is a **foreign record**: read it, preserve it, never edit it. TLS
+certificates and Ingress hostnames must match the records declared here.
 
 
 My domain is lotp.xyz, blog lives at blog.lotp.xyz

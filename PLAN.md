@@ -19,10 +19,12 @@ foundation. The *why* behind each load-bearing choice lives in
   against the 300-credit figure, so no milestone here caps it — but M8 measures it
   anyway, because it is the largest real cost and the platform budget says nothing
   about it.
-- **Domain `lotp.xyz` at Namecheap.** Ours: `learn.`, `api.`, `sandbox.` and the
-  staging variants. Foreign, and not ours to change: `blog.lotp.xyz` →
-  `lo-tp.github.io`. The apex and `www.` have no records today; leave them that
-  way.
+- **Domain `lotp.xyz`, registered and DNS-hosted at Namecheap — and it stays
+  there.** Ours: `learn.`, `api.`, `sandbox.` and the staging variants, entered by
+  hand in Namecheap because their API allowlists single IPs and won't take a range
+  ([ADR 0004](./docs/adr/0004-dns-stays-at-namecheap.md)). `blog.lotp.xyz` →
+  `lo-tp.github.io` is a **foreign record**: never touched, and untouched by this
+  plan. The apex and `www.` have no records today; leave them that way.
 - **Terraform drives everything; `gcloud` creates nothing.** The rule, and the one
    thing it doesn't cover (the credential helper `kubectl` needs), is in
    [`AGENTS.md`](./AGENTS.md). Two things stay outside Terraform's reach and both
@@ -53,16 +55,17 @@ nothing in this plan asks for a `gcloud` command.
 ## M1 — Terraform foundation
 
 The GCP **project** (`google_project`, trial billing account attached) and every
-API it needs (`google_project_service`: `container`, `dns`, `secretmanager`,
+API it needs (`google_project_service`: `container`, `secretmanager`,
 `artifactregistry`, `cloudbuild`, `compute`), then the GKE **Autopilot** cluster
-(single zone in `asia-east2`), Artifact Registry, VPC + subnetwork, Cloud DNS
-zone, GCS bucket for dumps, Secret Manager entries and the CI service account's
+(one cluster zone in `asia-east2`), Artifact Registry, VPC + subnetwork, GCS
+bucket for dumps, Secret Manager entries and the CI service account's
 IAM and workload-identity federation, and **budgets with alert emails**
 (`google_billing_budget`, thresholds at 25/75/150 USD of the credit) before
-anything else is billable. Terraform is the only thing that creates any of it.
+anything else is billable. Terraform is the only thing that creates any of it —
+with one deliberate exception, and it isn't here (ADR 0004).
 
 **Done when:** `terraform plan` is empty on a re-run; `terraform state list`
-shows the cluster, zone, registry, budgets and service account; `kubectl get
+shows the cluster, registry, bucket, budgets and service account; `kubectl get
 nodes` reports a Ready node.
 
 ## M2 — Images (this is where the work actually is)
@@ -136,14 +139,19 @@ Ingress routes by Host header. The sandbox's `/api/compile` is **never routed**:
 it stays a ClusterIP Service the backend calls directly
 ([CONTEXT.md → public surface](./CONTEXT.md)).
 
-Then, and only then, the DNS move: recreate the zone in Cloud DNS **with
-`blog.lotp.xyz → lo-tp.github.io` copied first**, lower TTLs a day ahead, flip
-the nameservers at Namecheap (human step), then A-records for our three hosts to
-the static IP.
+Then the records. **The zone never moves and the nameservers are never changed**:
+`blog.lotp.xyz` and everything else you already have stay exactly where they are.
+The set of records we need lives in this repo as a variable, and
+`terraform output dns_records` prints it as rows to type into Namecheap —
+A records for `learn.`, `api.`, `sandbox.` and the staging hosts, all to the one
+static IP. Google issues the certificate only once those records resolve, so this
+is a gate, not a formality.
 
 **Done when:** `curl -I https://` works on all three hosts with a valid cert, the
-sign-in cookie works from `learn.` to `api.` (same-site, cross-origin), and
-`https://blog.lotp.xyz` still serves from GitHub Pages.
+sign-in cookie works from `learn.` to `api.` (same-site, cross-origin), the
+records typed into Namecheap match `terraform output dns_records` line for line,
+and `https://blog.lotp.xyz` still serves from GitHub Pages — unchanged because
+nothing near it was touched.
 
 ## M7 — Secrets to pods
 
