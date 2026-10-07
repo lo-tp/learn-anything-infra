@@ -2,6 +2,7 @@ namespace: learn-anything
 
 resources:
   - namespace.yaml
+  - ingress.yaml
   - ../../base
 
 patches:
@@ -35,7 +36,9 @@ patches:
 # pipeline produced.
 images:
   - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-backend
-    digest: sha256:dd32533ac7d83b47731e4e7c92e8c75a235e8cf9330b47005da6fee9a65c1d8f  # sha-fdb0b377 (CI, fdb0b377)
+    # The cookie-scope fix (core/security.cookie_policy) rides with the ingress:
+    # a shared-domain cookie is only observable once two hosts are actually served.
+    digest: sha256:4cf283528e5ff79671eb200c0e9d83278abda9878394c270f9c7dfb258a11f37  # sha-5e2a9fa4 (CI, 5e2a9fa4)
   # The frontend and sandbox images come from their own repositories' Actions runs.
   # Their workflows' smoke steps are the gate that matters for these two: the
   # frontend must redirect an anonymous visitor and render a page whose text comes
@@ -60,6 +63,11 @@ configMapGenerator:
   - name: backend-config
     literals:
       - FRONTEND_DOMAIN=https://learn.lotp.xyz
+      # The sign-in cookie is issued by api. and read by learn. (its proxy
+      # verifies the JWT with the shared JWT_SECRET), so it has to be written for
+      # the parent domain. Without this the app bounces a signed-in browser back to
+      # its own login page: core/security.cookie_policy in the backend.
+      - COOKIE_DOMAIN=.lotp.xyz
       - SANDBOX_URL=http://sandbox.learn-anything.svc.cluster.local:80
       - LOG_LEVEL=INFO
 

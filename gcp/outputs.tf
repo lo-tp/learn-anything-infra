@@ -62,3 +62,63 @@ output "k8s_namespace" {
   EOT
   value       = var.k8s_namespace
 }
+
+output "ingress_ip" {
+  description = <<-EOT
+    The address every public surface resolves to, reserved by name in
+    gcp/ingress.tf. The Ingress annotation refers to it by name
+    (learn-anything-ingress-ip); this output is for the human who types it into a
+    DNS dashboard.
+  EOT
+  value       = google_compute_global_address.ingress_ip.address
+}
+
+output "dns_records" {
+  description = <<-EOT
+    Exactly the rows that belong in the registrar's Advanced DNS: name, type,
+    value, TTL. When the dashboard and this list disagree, this repo is right and
+    the dashboard is wrong (docs/adr/0004-dns-stays-at-namecheap.md).
+  EOT
+  value = join("\n", [
+    for h in local.live_hosts : format(
+      "  %-26s A      %-15s TTL %s",
+      h, google_compute_global_address.ingress_ip.address, var.dns_ttl_seconds
+    )
+  ])
+}
+
+output "dns_records_deferred" {
+  description = <<-EOT
+    Declared, not pointed: the staging hosts, which have no load balancer behind
+    them until M9 decides a second address and forwarding rule are worth the
+    monthly line. They are printed here rather than left out, because a name that
+    exists only in someone's memory is how a certificate ends up not covering it.
+  EOT
+  value = join("\n", [
+    for h in local.deferred_hosts : format(
+      "  %-26s A      %-15s TTL %s   (not typed yet: no ingress for staging)",
+      h, google_compute_global_address.ingress_ip.address, var.dns_ttl_seconds
+    )
+  ])
+}
+
+output "dns_records_foreign" {
+  description = <<-EOT
+    What is on the zone but not ours. Print this before touching the dashboard.
+  EOT
+  value = join("\n", [
+    for r in var.dns_foreign_records : format(
+      "  %-26s %-6s %-15s  %s", "${r.name}.${var.dns_zone}", r.type, r.value, r.why
+    )
+  ])
+}
+
+output "certificate_hosts" {
+  description = <<-EOT
+    Every host the one managed certificate has to cover. The certificate and the
+    Ingress live in the manifests, so this output is what those files are checked
+    against (scripts/dns-check.sh) rather than a second place to remember them.
+    Staging is not in this list because nothing is asked to cover it yet.
+  EOT
+  value       = local.live_hosts
+}

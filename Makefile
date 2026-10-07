@@ -85,7 +85,16 @@ secrets: ## render Secret objects from Secret Manager (SECRETS=… to target, CH
 # migrated and what gets deployed cannot disagree. `make deploy ENV=staging` for
 # the other one; staging's database is asleep, so it needs SKIP_MIGRATE=1 or a
 # woken database.
+# Four things have to agree for a public surface to answer: the host list
+# Terraform declares, the Ingress and certificate the cluster is running, the
+# records at the registrar (typed by hand — ADR 0004), and the certificate Google
+# issued. Any one of them being behind the others looks like a broken deploy from
+# a browser, so this asks each one out loud. Read-only; exits non-zero on any
+# disagreement.
+dns-check: ## is the public surface the one this repo says it is?
+	$(kenv) NAMESPACE=$(NS) ./scripts/dns-check.sh
+
 deploy: ## the M5 order: migrate, apply, wait (ENV=prod|staging)
 	$(kenv) NAMESPACE=$(NS) ./scripts/deploy.sh $(ENV)
 
-.PHONY: help tf-fmt tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck
+.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck

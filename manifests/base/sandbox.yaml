@@ -58,8 +58,16 @@ spec:
           # GET. /slides/{id} needs the service token and the backend;
           # /api/compile needs a POST body. "Accepting connections" is the honest
           # statement this probe can make.
+          # HTTP, not TCP: a readiness check that only opens a socket passes while
+          # the app is returning 500s. `/` in this app is a static page with no
+          # dependencies, which is what a readiness route should be — and GKE copies
+          # this probe into the load balancer's health check for the NEG (M6), so it
+          # is also the definition the URL map judges by. The liveness probe stays
+          # TCP on purpose: restarting a pod because one request went wrong is a
+          # worse remedy than the readiness gate, which stops sending it traffic.
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10

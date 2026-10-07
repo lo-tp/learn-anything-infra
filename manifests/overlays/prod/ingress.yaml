@@ -1,0 +1,91 @@
+# One load balancer, three hostnames, one certificate.
+#
+# This is the whole public surface of the product. Routing is by Host header; the
+# address comes from Terraform by **name** (`gcp/ingress.tf` reserves it precisely
+# so the DNS rows can be typed before the balancer exists), and the certificate is
+# issued by Google once those names resolve — which is why M6 is a gate and not a
+# formality: nothing here works until the registrar agrees with this file.
+#
+# The host list is a copy of `terraform output certificate_hosts`, and
+# `scripts/dns-check.sh` is what keeps the two copies honest. A certificate that
+# omits a host and an Ingress that routes it produce the same symptom as a missing
+# DNS record — a browser error at a URL that looks correctly deployed — so the
+# disagreement is worth a command rather than a memory.
+#
+# Staging is not here. A global forwarding rule owns an address exclusively, so a
+# second environment is a second address and a second forwarding rule, not a second
+# set of host rules on this one; whether that is worth paying for is an M9 question
+# with a measured number next to it, and until then staging is reached by
+# port-forward (see overlays/staging/asleep.yaml).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: surfaces
+  annotations:
+    # By name, not by IP: the address is Terraform's and may outlive this Ingress,
+    # and the DNS rows Terraform prints are the ones that point at it.
+    # The class, by annotation rather than `ingressClassName`. This cluster has no
+    # IngressClass object at all (`kubectl get ingressclass` returns nothing), so a
+    # spec-level class name references something that does not exist: the ingress
+    # looks correctly applied, the controller annotates the Services with NEGs, and
+    # then no forwarding rule is ever created and the ADDRESS column stays empty
+    # forever. The annotation is what this controller claims.
+    kubernetes.io/ingress.class: gce
+    kubernetes.io/ingress.global-static-ip-name: learn-anything-ingress-ip
+    networking.gke.io/managed-certificates: learn-anything-tls
+    # Port 80 stays open so that http:// is a redirect rather than a refused
+    # connection; the certificate is what the browser ends up on, not what it
+    # started at.
+    ingress.kubernetes.io/force-ssl-redirect: "true"
+  labels:
+    app.kubernetes.io/part-of: learn-anything
+spec:
+  rules:
+    - host: learn.lotp.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+    - host: api.lotp.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 80
+    # The sandbox host carries `/slides` and nothing else. Its `/api/compile` is an
+    # internal call by definition (CONTEXT.md), and a prefix rule on `/` would put
+    # it on the public internet: the endpoint takes whatever code a browser posts
+    # and runs the TypeScript compiler and esbuild over it, which is a compute
+    # surface nobody asked to sell. The page's own assets — harness.js, vendor/,
+    # reset.css — all live under /slides, so this rule is complete for the iframe.
+    - host: sandbox.lotp.xyz
+      http:
+        paths:
+          - path: /slides
+            pathType: Prefix
+            backend:
+              service:
+                name: sandbox
+                port:
+                  number: 80
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: learn-anything-tls
+  labels:
+    app.kubernetes.io/part-of: learn-anything
+spec:
+  domains:
+    - learn.lotp.xyz
+    - api.lotp.xyz
+    - sandbox.lotp.xyz

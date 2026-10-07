@@ -77,3 +77,68 @@ variable "k8s_namespace" {
     error_message = "k8s_namespace must be a valid DNS-1123 label: lowercase alphanumerics and hyphens."
   }
 }
+
+variable "dns_zone" {
+  description = <<-EOT
+    The zone the public surfaces live on. Namecheap's dashboard wants each record's
+    name relative to the zone ("learn"), which is why the outputs join host to zone
+    rather than storing fully-qualified names here.
+  EOT
+  type        = string
+  default     = "lotp.xyz"
+}
+
+variable "public_hostnames" {
+  description = <<-EOT
+    The production surfaces: the app, its API, and the sandbox's slide frames. These
+    are the rows that belong in the registrar, and the names the certificate must
+    cover. Declared here because a certificate, an Ingress and a DNS row are three
+    spellings of one decision, and the disagreement between them is a 503 with a
+    valid cert.
+  EOT
+  type        = list(string)
+  default     = ["learn", "api", "sandbox"]
+}
+
+variable "staging_hostnames" {
+  description = <<-EOT
+    The staging variants, named the same way rather than as a sub-zone: one level,
+    one cert, no second zone to delegate. See PLAN.md M6.
+  EOT
+  type        = list(string)
+  default     = ["staging.learn", "staging.api", "staging.sandbox"]
+}
+
+variable "dns_foreign_records" {
+  description = <<-EOT
+    Records on this zone that this project does not own — CONTEXT.md's *foreign
+    record*. They are listed so that `terraform output dns_records_foreign` can say
+    "leave this alone" out loud when someone is elbow-deep in the dashboard, not so
+    that Terraform can manage them: it cannot, and it should not try.
+  EOT
+  type = list(object({
+    name  = string
+    type  = string
+    value = string
+    why   = string
+  }))
+  default = [
+    {
+      name  = "blog"
+      type  = "CNAME"
+      value = "lo-tp.github.io"
+      why   = "GitHub Pages. Read it, preserve it, never edit it."
+    },
+  ]
+}
+
+variable "dns_ttl_seconds" {
+  description = <<-EOT
+    The TTL to type into the registrar. Short on purpose: during a cutover the
+    records are the thing being changed, and a 30-minute default is a 30-minute
+    wait to find out whether the change worked. Namecheap offers 5 min; anything
+    shorter is a rounding error against a hand-edited dashboard.
+  EOT
+  type        = number
+  default     = 300
+}
