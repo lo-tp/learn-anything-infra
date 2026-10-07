@@ -298,6 +298,14 @@ are estimates):
 | one third of the window | 2026-11-06 | ~$100 |
 | two thirds of the window | 2026-12-06 | ~$200 |
 
+The first checkpoint has one named question to answer before anything else: **is a
+GKE cluster-management fee being charged?** ADR 0001 expects it to be waived by the
+free tier (one cluster's fee per billing account) and does not assume it. This is
+the largest single unknown in the budget at ~$2.40/day, so the first table should
+show a GKE row either at $0 with the waiver visible as a credit line, or at the
+list rate — and if it is the latter, ADR 0001 is revisited before more is built on
+GKE.
+
 Record the **turn-off order** here: what gets switched off first when spend runs
 ahead — frontend/sandbox scale-to-zero already handles the rest.
 
@@ -317,6 +325,11 @@ broke it.
 - Per-component cost figures in this plan are estimates I have not verified
   against Google's pricing page: **M1 replaces them with real numbers before M2
   starts.**
+- The GKE free-tier fee waiver is assumed to apply to a **free-trial** billing
+  account. Sources disagree on whether the waiver follows the trial, and
+  Autopilot clusters are always regional, so the zonal-clause wording does not
+  cover them either. Unverified; worth $2.40/day; M10 checks it rather than
+  trusting it. See the correction in ADR 0001.
 - **State location is settled:** `bootstrap/` creates the versioned state bucket
   in `asia-east2`; `gcp/` keeps its state there with the GCS backend, which
   locks states on its own. One local state file remains, in `bootstrap/`, and it

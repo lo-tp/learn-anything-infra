@@ -1,6 +1,23 @@
 # ADR 0001: Autopilot, because the Standard cluster management fee alone would
 # take most of the trial credit. Per-pod billing means the requests written in
 # M3 are the bill, not a hint.
+#
+# One correction to that reasoning, recorded honestly: Autopilot is not exempt
+# from the cluster management fee. GKE bills a cluster-scoped fee for both modes
+# (~$0.10/hour, roughly $72/month); what makes it free here is the GKE free tier,
+# which waives the fee for one cluster per billing account. Whether a free-trial
+# account keeps that waiver is not something these sources settle, and it is worth
+# $2.40/day — so M10 checks the billing export for a GKE cluster-management SKU
+# before trusting the budget arithmetic. If the fee is real, the levers are a
+# zonal Standard cluster with one Spot node (free-tier eligible, but Autopilot
+# clusters are always regional) or deleting and re-creating the cluster on demand.
+#
+# If an apply is interrupted while the cluster is being created, GKE finishes the
+# job regardless and the cluster ends up real but outside state — that happened
+# once already. Rejoin it rather than letting Terraform create a second cluster:
+#
+#   terraform import 'google_container_cluster.main' \
+#     projects/learn-anything-510905/locations/asia-east2/clusters/learn-anything
 resource "google_service_account" "gke_nodes" {
   account_id   = "gke-nodes"
   display_name = "What GKE runs pods as"

@@ -5,9 +5,9 @@ Learn Anything has to run somewhere, and the binding constraint is a $300 /
 second Render blueprint would serve all three services for a fraction of that.
 We chose GKE **Autopilot** in `asia-east2` anyway, because the point of this work
 is to learn Kubernetes properly and the platform cost *is* the price of that; and
-we chose Autopilot over Standard deliberately, because Standard's cluster
-management fee alone (~$0.10/hour, ~$216 over 90 days) would consume most of the
-credit before anything ran.
+we chose Autopilot over Standard because Autopilot bills compute per pod
+**request**, which is what makes scale-to-zero honest: an idle namespace costs
+nothing instead of holding a node.
 
 ## Considered options
 
@@ -15,13 +15,37 @@ credit before anything ran.
   Rejected: it optimises away the thing this project exists to teach.
 - **Render, extended** — already working for the backend. Rejected: it is
   hand-configured outside the repo, and it is the thing we are leaving.
-- **GKE Standard** — full control. Rejected on cost: the management fee dominates
-  a budget this small, and nothing here needs the control.
+- **GKE Standard** — full control, and cheaper on the control plane if you take
+  it: the free tier waives the management fee for one **zonal** cluster per
+  billing account, and a single Spot node runs this app for ~$10/month. Rejected
+  because the compute model is the wrong one here — Standard bills nodes, so
+  scale-to-zero has to be engineered (node pool autoscaling, Spot taints,
+  system-pod placement) rather than falling out of the requests in the manifests —
+  and that plumbing is a second thing to learn at once, not the thing we want to
+  learn first.
+
+**Correction, made while applying M1.** The first draft of this ADR said Standard's
+management fee alone (~$0.10/hour, ~$216 over 90 days) would consume most of the
+credit, as though Autopilot did not have one. It does: GKE bills a cluster-scoped
+fee for **both** modes, and the thing that makes the first cluster free is the GKE
+free tier — one cluster's fee waived per billing account — not the choice of
+Autopilot. Autopilot clusters are also always regional, so the "make it zonal to
+stay in the free tier" lever is not available for them. Whether a free-trial
+account keeps that waiver is not settled by the sources read for this correction,
+and it is worth $2.40/day, so the claim is now a thing to check rather than an
+assumption: see the billing-export check added to Consequences.
 
 ## Consequences
 
 - Autopilot bills on per-pod **requests**, so `requests` are written tight on
   purpose. Sloppy requests are not a warning here; they are the bill.
+- The cluster management fee is expected to be $0 under the free tier and is
+  **not** assumed to be. Within a week of the cluster existing, check the billing
+  export (or the budget alerts) for a GKE cluster-management SKU. If it is being
+  charged, this decision is revisited on price: a zonal Standard cluster with one
+  Spot node is the free-tier-shaped answer, or the cluster is deleted and
+  re-created from Terraform when needed — ~10 minutes of lead time, which is
+  acceptable for a project with no traffic to lose.
 - Frontend and Sandbox scale to **zero**. An unused app is nearly free, and the
   first visitor pays a cold start of tens of seconds. That is bought knowingly,
   not discovered later; the backend is exempt (see ADR 0003) because its cold
