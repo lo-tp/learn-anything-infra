@@ -52,12 +52,20 @@ variable "secrets" {
 
 variable "monthly_platform_budget_usd" {
   description = <<-EOT
-    The platform ceiling from PLAN.md, not the credit. The credit is 300 USD over
-    91 days to 2027-01-06; inference spend sits outside this figure by your
-    instruction.
+    A tripwire on the platform bill, not a target. It must sit above the cost of
+    the topology actually running, or it fires every month and stops being an
+    alert: with three tiers pinned at one replica (PLAN.md M3, option D, chosen
+    2026-10-08) the always-on floor is four pods at Autopilot's per-pod minimum —
+    about twice the two-pod rate measured in M4, order 50 USD/month — before any
+    load-balancer line. So this figure is "something is wrong above here": a
+    stray node, an egress surprise, a mistaken scale-up. Calibrate it at the first
+    M10 checkpoint from the billed numbers rather than from this estimate.
+
+    The hard constraint is not here: it is the trial credit's 3.30 USD/day until
+    2027-01-06. Inference spend sits outside this figure by your instruction.
   EOT
   type        = number
-  default     = 35
+  default     = 70
 }
 
 variable "k8s_namespace" {

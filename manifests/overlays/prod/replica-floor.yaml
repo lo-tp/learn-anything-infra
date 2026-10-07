@@ -1,5 +1,6 @@
-# Frontend and sandbox: one replica each, always. This is a temporary stance, and
-# the paragraph below is why it is not the design.
+# Frontend and sandbox: one replica each, always. **This is the design** (option D,
+# chosen 2026-10-08); the paragraph below is why the design is a floor rather than
+# a scale-from-zero, so that nobody "optimises" it back to zero.
 #
 # The design (ADR 0001, PLAN.md M3) is that these two tiers sleep at zero and wake
 # on demand. Nothing installed does that: the option chosen on paper (KEDA with a
@@ -14,17 +15,21 @@
 # would have saved: the plan's own corrected arithmetic puts KEDA at ~$25–38/month
 # for control-plane pods alone.
 #
-# So the honest interim answer is option (D): a floor of one, which the plan prices
-# at ~$38/month for the three tiers (~$50/month with the backend) — inside the
-# trial credit's $3.30/day ceiling, above the $35/month target, and therefore a
-# decision to revisit at M10 with the bill in hand, not a settled choice. Nothing
-# here is cheaper because Autopilot bills a per-pod floor of 0.25 vCPU / 1 GiB
-# regardless of what the container asks for: lowering requests below that changes
-# nothing.
+# So the choice is the floor: one replica each, accepted as ~$50/month of pods
+# including the backend — inside the trial credit's $3.30/day ceiling, above the
+# monthly figure this project once targeted, and irreducible by lowering requests,
+# because Autopilot bills a per-pod floor of 0.25 vCPU / 1 GiB whatever the
+# container asks for. What is *not* accepted is pretending the alternative is
+# cheap: the queueing options (Knative's activator, KEDA's HTTP add-on) cost
+# control-plane pods that are themselves at the floor, which is most of what they
+# save. The lever that would change the arithmetic is running these two tiers
+# somewhere that queues (Cloud Run), and that is a topology change, not a knob
+# here — see docs/adr/0001's amendment.
 #
-# What this patch is for, then: a browser visiting learn.lotp.xyz should not get a
-# 502 because the tier behind the URL map has no endpoints. If (B) or (C) is chosen
-# at M8, this file is what comes out.
+# What this patch is for: a browser visiting learn.lotp.xyz gets the app, and the
+# backend's internal call to the sandbox reaches an endpoint. Both of those failed
+# with a 502 while these numbers were 0. If a later topology change moves these
+# tiers elsewhere, this file and the two Deployments go together.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

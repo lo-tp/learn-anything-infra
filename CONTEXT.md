@@ -63,3 +63,19 @@ the redirect to a sign-in page, `/api/compile`. It is the image's contract writt
 as a step, not a manual check someone performs afterwards: a build that succeeds
 proves the compiler ran, not that the image can serve anything.
 _Avoid_: health check (that is the Kubernetes probe), sanity check, e2e.
+
+**Replica floor**:
+The minimum number of replicas a tier is pinned to in a given environment. It is a
+deployment decision, and it is the unit in which Autopilot cost is paid — so
+"make it cheaper" and "make it available" are the same number, written in two
+places. The production floor for the three application tiers is 1
+(`manifests/overlays/prod/replica-floor.yaml`).
+_Avoid_: warm standby, always-on (that is the consequence, not the setting).
+
+**Billing floor**:
+Autopilot's per-pod minimum — 0.25 vCPU and 1 GiB — charged whether the container
+asks for that or less. Not the same thing as a replica floor: lowering requests
+below the billing floor saves nothing, which is why an idle-looking pod is not a
+cheap pod.
+_Avoid_: pod size, request (the request is what the container asks for; the floor
+is what the platform charges).
