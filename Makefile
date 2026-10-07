@@ -27,6 +27,23 @@ tf-output:
 tf-bootstrap:
 	$(MAKE) tf-init tf-apply tf-output ROOT=bootstrap
 
-kubectl = $(AUTH) $(GCP_ENV) kubectl
+# kubectl authenticates through gcloud and gke-gcloud-auth-plugin, which needs the
+# bundled SDK on PATH and the *human* credential — the plugin crashes when the
+# active gcloud credential is a service-account key (AGENTS.md, "Cluster access").
+# Keeping these targets apart from the Terraform ones is what stops one identity
+# leaking into the other's work.
+SDK        = $(CURDIR)/google-cloud-sdk/bin
+KUBECONFIG ?= $(CURDIR)/.kubeconfig-gke
+kenv = PATH="$(SDK):$(PATH)" KUBECONFIG=$(KUBECONFIG) $(GCP_ENV)
 
-.PHONY: tf-fmt tf-init tf-plan tf-apply tf-output
+kcreds:
+	$(kenv) gcloud container clusters get-credentials learn-anything --region=asia-east2
+
+# The M1 readiness check. `get nodes` reporting nothing is the expected state for
+# an idle Autopilot cluster; the control plane answering is the part that matters.
+kcheck:
+	$(kenv) kubectl get --raw /readyz
+	$(kenv) kubectl get ns
+	$(kenv) kubectl get nodes || true
+
+.PHONY: tf-fmt tf-init tf-plan tf-apply tf-output kcreds kcheck

@@ -92,6 +92,44 @@ local dev servers (backend `8001`, sandbox `3001`) go through the proxy and fail
 settings, set in Docker Desktop, not in this shell. CI in GitHub Actions needs
 none of this — it runs from GitHub's network.
 
+## Cluster access
+
+`kubectl` and Terraform use **different identities on purpose**, and the reason is
+a tool failure rather than a policy preference: `gke-gcloud-auth-plugin` shells out
+to `gcloud config config-helper`, and that crashes (`'Credentials' object has no
+attribute 'private_key_id'`) whenever the active gcloud credential is a
+service-account key. So:
+
+```sh
+export PATH="$PWD/google-cloud-sdk/bin:$PATH"   # gcloud + gke-gcloud-auth-plugin
+export KUBECONFIG=$PWD/.kubeconfig-gke          # generated, gitignored
+gcloud container clusters get-credentials learn-anything --region=asia-east2
+```
+
+That uses the logged-in **human** (project owner), which is correct for
+interactive cluster work and does not move Terraform, whose credentials the Makefile
+pins to `terraform-local`. Never run `gcloud auth application-default login`: it
+would repoint Terraform at the human identity.
+
+The GKE **control-plane endpoint is reachable directly** from this network — unlike
+`container.googleapis.com`, which black-holes. Going through the proxy works too,
+so either is fine; do not conclude from a hung `container.googleapis.com` call that
+the cluster is unreachable.
+
+An **idle Autopilot cluster has no nodes**: `kubectl get nodes` returning `No
+resources found` is the expected state, not a failure. Nodes appear when a
+workload schedules, and disappear again. The managed namespaces
+(`gke-gmp-system`, `gke-managed-cim`, …) exist without any node in sight.
+
+## Terraform operation
+
+An interrupted `terraform apply` on this root is recoverable but not silently:
+GKE finishes creating the cluster regardless, so the cluster ends up real and
+outside state, and the killed process leaves a **stale lock** in the state bucket.
+The recovery is `terraform force-unlock <lock-id>` (the ID is in the error text),
+then `terraform import` the cluster, then apply — never let a second apply create a
+second cluster.
+
 ## Datastore
 
 The backend relies on a PostgreSQL database, run in-cluster as a StatefulSet with

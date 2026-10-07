@@ -152,14 +152,39 @@ budget still measures real consumption, which is the whole point of the
 and it isn't here (ADR 0004).
 
 **Done when:** `terraform plan` is empty on a re-run; `terraform state list`
-shows the cluster, registry, bucket, budgets and service account; `kubectl get
-nodes` reports a Ready node.
+shows the cluster, registry, bucket, budgets and service account; the cluster's
+control plane answers `kubectl get --raw /readyz` with `ok`.
 
-**Status: written and planned, not yet applied.** `gcp/` imports the project and
-the existing service account, and `terraform plan` reports **50 to add, 2 to
-change, 0 to destroy** — the two changes are attaching billing to the project and
-replacing `roles/owner` on `terraform-local` with the granular bindings. Applying
-it is the step that starts real spend, so it is a deliberate act, not a formality.
+~~`kubectl get nodes` reports a Ready node~~ — that check was wrong, and it was
+worth being wrong: an **Autopilot cluster has no nodes while nothing is
+scheduled**, which is exactly the property ADR 0001 pays for. Verified on the
+real cluster: `No resources found`, with only the managed namespaces
+(`gke-gmp-system`, `gke-managed-cim`, …) present.
+
+**Status: applied.** `terraform plan` re-runs to *No changes*, and state holds the
+project, 14 APIs, VPC + subnetwork, the Autopilot cluster (`learn-anything`,
+`asia-east2`, server `v1.35.8-gke.1225000`), Artifact Registry with the cleanup
+policy enforced, both buckets, 7 Secret Manager entries, the CI identity with three
+WIF providers, both budgets and the billing-account grant. `roles/owner` is gone
+from `terraform-local`, replaced by the granular set in `iam.tf`.
+
+Applying it took five attempts, and each failure is now a comment in the file that
+caused it: API-enablement races (403 "API has not been used in project…"), OIDC
+providers requiring `attribute_mapping`, `roles/billing.budgetsWriter` not being
+grantable on a billing account, a missing `roles/iam.workloadIdentityPoolAdmin`
+that cannot self-heal because the permission is needed at refresh time, and an
+Artifact Registry cleanup policy whose `action` must be `KEEP` — the API's own error
+for the wrong value is just "invalid repository" plus the whole request body.
+One apply was interrupted mid-cluster-creation; GKE finished the cluster anyway,
+which left a real cluster outside state and a stale GCS state lock. Rejoined with
+`terraform force-unlock` then `terraform import`, rather than letting Terraform
+build a second cluster.
+
+Two environment facts that only showing up on the real cluster could teach: the
+GKE **control-plane endpoint is reachable directly** from this network (unlike
+`container.googleapis.com`, which black-holes), and `gke-gcloud-auth-plugin`
+crashes when the active gcloud credential is a service-account key — so `kubectl`
+runs as the human identity while Terraform keeps the service principal.
 
 ## M2 — Images (this is where the work actually is)
 

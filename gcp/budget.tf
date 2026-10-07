@@ -10,7 +10,11 @@ resource "google_billing_budget" "platform" {
   display_name    = "learn-anything platform (this project)"
 
   budget_filter {
-    projects               = ["projects/${var.project_id}"]
+    # The project *number*, not its ID. Google answers a budget created with
+    # `projects/<id>` by rewriting the filter to `projects/<number>`, so declaring
+    # the ID leaves a permanent fake diff in every plan — and a plan that always
+    # shows a change is a plan nobody reads.
+    projects               = ["projects/${google_project.main.number}"]
     calendar_period        = "MONTH"
     credit_types_treatment = "INCLUDE_ALL_CREDITS"
   }
