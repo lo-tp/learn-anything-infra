@@ -17,10 +17,11 @@ foundation. The *why* behind each load-bearing choice lives in
   That makes the hard ceiling **$3.30/day for the platform** — not the earlier
   ~$3.33 estimate — and the design target I hold myself to is **platform
   ≤ $35/month**, the rest headroom for egress and mistakes.
-- **The credit belongs to the billing account, not to this project.** Anything
-  else running on `01C0D4-4C9481-8E0DC4` drains the same pot, so M1 creates two
-  budgets: one filtered to this project (what the platform actually costs) and one
-  unfiltered at account level (what is left of the credit).
+- **The credit belongs to the billing account, not to this project — and you have
+  confirmed this project is the only thing drawing on it.** M1 still creates two
+  budgets, but their jobs differ now: the one filtered to this project measures
+  what the platform costs, and the unfiltered one is a **canary** — it should stay
+  silent, and if it fires, something unknown is spending your January.
 - **Inference is outside that budget.** You said the LLM/API spend is not counted
   against the 300-credit figure, so no milestone here caps it — but M8 measures it
   anyway, because it is the largest real cost and the platform budget says nothing
@@ -153,6 +154,12 @@ and it isn't here (ADR 0004).
 **Done when:** `terraform plan` is empty on a re-run; `terraform state list`
 shows the cluster, registry, bucket, budgets and service account; `kubectl get
 nodes` reports a Ready node.
+
+**Status: written and planned, not yet applied.** `gcp/` imports the project and
+the existing service account, and `terraform plan` reports **50 to add, 2 to
+change, 0 to destroy** — the two changes are attaching billing to the project and
+replacing `roles/owner` on `terraform-local` with the granular bindings. Applying
+it is the step that starts real spend, so it is a deliberate act, not a formality.
 
 ## M2 — Images (this is where the work actually is)
 
