@@ -1,0 +1,40 @@
+# Frontend and sandbox: one replica each, always. This is a temporary stance, and
+# the paragraph below is why it is not the design.
+#
+# The design (ADR 0001, PLAN.md M3) is that these two tiers sleep at zero and wake
+# on demand. Nothing installed does that: the option chosen on paper (KEDA with a
+# request-count scaler) was never installed, and M6 measured what the mechanism
+# would have to beat. A browser request to a global Application Load Balancer goes
+# to a NEG; there is no queue in front of the pod, so a scaler can only react to
+# ALB request metrics, which arrive minutes late — and after a pod *is* Ready, its
+# NEG attaches 1–4 minutes later still, answering 502 meanwhile. Scale-from-zero on
+# this platform is therefore not a knob on the Deployment; it needs a proxy that
+# queues (Knative's activator, KEDA's HTTP add-on) or a different product for those
+# tiers (Cloud Run, PLAN.md M3 option C). Both cost roughly what the idle pods
+# would have saved: the plan's own corrected arithmetic puts KEDA at ~$25–38/month
+# for control-plane pods alone.
+#
+# So the honest interim answer is option (D): a floor of one, which the plan prices
+# at ~$38/month for the three tiers (~$50/month with the backend) — inside the
+# trial credit's $3.30/day ceiling, above the $35/month target, and therefore a
+# decision to revisit at M10 with the bill in hand, not a settled choice. Nothing
+# here is cheaper because Autopilot bills a per-pod floor of 0.25 vCPU / 1 GiB
+# regardless of what the container asks for: lowering requests below that changes
+# nothing.
+#
+# What this patch is for, then: a browser visiting learn.lotp.xyz should not get a
+# 502 because the tier behind the URL map has no endpoints. If (B) or (C) is chosen
+# at M8, this file is what comes out.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox
+spec:
+  replicas: 1

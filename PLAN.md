@@ -302,7 +302,9 @@ through its own probe; the frontend and sandbox are at zero replicas by patch
 (`asleep.yaml`) — the gate clause "the other two sit at zero", arrived at by a
 different route than the HPA placeholder originally imagined. Their images now exist
 and are pinned by digest, so what still keeps them from serving is the **wake-up
-mechanism** (KEDA, option A, not installed) and **M6's ingress and hostnames**. The
+floor** (`replica-floor.yaml`, option D below — taken temporarily on 2026-10-08
+after a browser visit started returning 502, see the option table) and **M6's
+ingress and hostnames**, which is done. The
 HPA placeholders are gone from both: a `minReplicas: 1` HorizontalPodAutoscaler
 forbids the zero that ADR 0001's design requires, and KEDA expects to own that
 range. What is still missing for this gate is the same named list: those
@@ -365,6 +367,25 @@ options, in the order I would weigh them:
   it optimises away the Kubernetes learning, and this keeps the learning on the
   tier where state actually lives.
 - **(D) Pin all three at 1.** Simplest, and it breaks the $35 ceiling above.
+
+**Measured, which is what (D) is now and why it is still not a decision.** A
+browser at `learn.lotp.xyz` got a 502 because the URL map's backend had no
+endpoints: the design's zero, with no wake mechanism installed. Going from zero to
+a 200 in the browser took **about four and a half minutes** — schedule, pull,
+readiness, then the 1–4 minutes for the NEG to attach. That is the number every
+option has to be judged against, and it is not a Kubernetes tuning problem: a
+global Application Load Balancer hands requests to a NEG with nothing queueing in
+front of it, so any scaler here reacts to ALB metrics that are already minutes
+late. `(A)` cannot fix a cold start, only pay for a control plane that tries; `(B)`
+and `(C)` are the two that actually queue.
+
+So the production overlay now pins one replica of each tier with the reason written
+where the knob is, and the remaining choice is narrower than the list above: **(C)
+or (D)**, at M8, with M10's first bill read in hand. Four always-on pods is
+roughly double the measured two-pod run-rate — order ~$1.7/day, ~$50/month —
+inside the trial credit's ceiling, above the $35 target, and irreducible by
+lowering requests, because Autopilot bills a 0.25 vCPU / 1 GiB floor per pod
+whatever the container asks for.
 
 The manifests carry `minReplicas: 1` as a **placeholder**, with that word in the
 comment, so the compromise is visible where the decision has to be acted on rather

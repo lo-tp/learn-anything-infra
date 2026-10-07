@@ -269,6 +269,11 @@ Things this cluster does that the manifests do not show:
 - **An unprogrammed Ingress with an empty ADDRESS is usually a missing dependency
   in the events**, not a slow LB: the first one waited on the NEG for
   `kube-system/default-http-backend`.
+- **All three tiers currently run at one replica** (`overlays/prod/replica-floor.yaml`),
+  because nothing installed wakes an idle tier, and on this platform nothing cheap can:
+  zero-to-browser measured ~4.5 minutes. The cost consequence and the open choice
+  (queue in-cluster, or Cloud Run for those two tiers) are in ADR 0001's amendment
+  and PLAN.md M3 — do not treat that file as the design, and do not delete it either.
 - **Staging has no public surface and no records.** One address = one forwarding
   rule, so a second environment would be a second address and a second monthly
   line; Terraform marks those hosts `dns_records_deferred` rather than leaving

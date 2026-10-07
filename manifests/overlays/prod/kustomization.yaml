@@ -9,7 +9,7 @@ patches:
   # The two tiers that have no image yet, and that are meant to be idle when
   # unused. Read that file before changing this number: it is a bill, and a pod
   # stuck in ImagePullBackOff is billed exactly like one that starts.
-  - path: asleep.yaml
+  - path: replica-floor.yaml
 
 # What production is running, stated here rather than passed in at deploy time:
 # this block is the record, and `git diff` of it is the thing a person approves.

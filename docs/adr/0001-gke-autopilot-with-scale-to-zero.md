@@ -62,3 +62,26 @@ assumption: see the billing-export check added to Consequences.
   choice is recorded as open; the choice of Autopilot itself is not reconsidered
   here, because the reason for it — learning Kubernetes on the tier where state
   actually lives — is unaffected.
+
+## Amendment (2026-10-08): the scale-to-zero half of this decision has no mechanism here
+
+The first half — Autopilot, pay-per-pod, small pinned workloads — is holding, and
+the two-tier floor of backend + database is what was measured. The second half,
+"and the idle tiers scale to zero *and come back on demand*", turned out to be a
+claim about a mechanism this platform does not provide for browser traffic.
+
+A global Application Load Balancer sends requests to a NEG. Nothing queueing in
+front of the pod means nothing that can hold a request while a pod starts: a scaler
+can only read ALB request metrics, which arrive minutes late, and even after a pod
+is Ready its NEG takes 1–4 more minutes to attach. Measured end to end: from zero
+replicas to a 200 in a browser, about four and a half minutes. A visitor experiences
+that as a broken site, which is exactly what one did (a 502 at `learn.lotp.xyz`).
+
+So: zero is still the right *idle* state for those tiers in principle, and this
+decision's cost argument for preferring Autopilot stands; but "wake on request"
+requires either a queueing layer in the cluster (Knative's activator, KEDA's HTTP
+add-on — whose own control-plane pods cost about what they save, per PLAN.md M3)
+or those tiers living somewhere that does queue (Cloud Run, PLAN.md M3 option C).
+Until that is chosen, the production overlay pins one replica of each with its
+reason in `manifests/overlays/prod/replica-floor.yaml`. This ADR's status is
+unchanged in intent and explicitly unfinished in mechanism.
