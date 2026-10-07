@@ -92,6 +92,60 @@ local dev servers (backend `8001`, sandbox `3001`) go through the proxy and fail
 settings, set in Docker Desktop, not in this shell. CI in GitHub Actions needs
 none of this — it runs from GitHub's network.
 
+## Container images: podman, not Docker
+
+Images on this machine are built and run with **podman**. Do not reach for `docker`
+— there may be no daemon, and podman is what holds the local images and the
+dev containers (`learn-anything-db`, `subconverter`).
+
+The podman VM is a separate network from the laptop, and it is the same wall as the
+"Network" section: from inside the VM, `registry-1.docker.io`, `mirror.gcr.io` and
+`asia-east2-docker.pkg.dev` all time out, while `storage.googleapis.com` answers —
+so the failure looks selective rather than total. The laptop's proxy **is** reachable
+from the VM as `host.containers.internal:6152`, so the pull path is fixed by giving
+the unit that does the pulling a proxy, inside the VM:
+
+```sh
+podman machine ssh 'mkdir -p ~/.config/systemd/user/podman.service.d && \
+  printf "[Service]\nEnvironment=HTTP_PROXY=http://host.containers.internal:6152\nEnvironment=HTTPS_PROXY=http://host.containers.internal:6152\nEnvironment=NO_PROXY=localhost,127.0.0.1,host.containers.internal\n" \
+  > ~/.config/systemd/user/podman.service.d/proxy.conf && \
+  systemctl --user daemon-reload && systemctl --user restart podman'
+```
+
+The **user** unit is the one that matters: the macOS client talks to
+`podman.service` in the VM's user session, and a drop-in on the system unit changes
+nothing. `systemctl --user restart podman` leaves running containers alone;
+`podman machine restart` does not.
+
+Sizing: the machine shipped with 5 CPUs and 2 GiB, which is too small to build an
+image with a real dependency tree. It is set to 8 CPUs / 12 GiB:
+
+```sh
+podman machine stop
+podman machine set --cpus 8 --memory 12288
+podman machine start
+```
+
+A machine restart stops running containers, and any container whose restart policy
+is `no` stays down. Check first (`podman inspect -f '{{.HostConfig.RestartPolicy.Name}}'
+<name>`), then start them again after.
+
+**CI is not affected by any of this.** GitHub runners have ordinary internet and use
+Docker + Buildx, so Dockerfiles stay plain — `# syntax=docker/dockerfile:1`,
+BuildKit `RUN --mount=type=secret`, no podman-specific syntax — and podman is the
+local verification path only.
+
+Building the backend image locally needs read access to the private prompts
+repository, which the build takes as a mounted secret, never a build arg:
+
+```sh
+gh auth token > /tmp/prompts_token   # must be able to read lo-tp/learn-anything-prompts
+cd ../python/learn-anything-backend
+podman build --secret id=prompts_token,src=/tmp/prompts_token -t learn-anything-backend:local .
+```
+
+CI takes the same value from the repository secret `PROMPTS_TOKEN`.
+
 ## Cluster access
 
 `kubectl` and Terraform use **different identities on purpose**, and the reason is
