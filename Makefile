@@ -62,7 +62,10 @@ PROJECT_ID := $(shell $(AUTH) $(GCP_ENV) terraform -chdir=gcp output -raw projec
 # the pipeline. It runs as the human identity, like every gcloud/kubectl target
 # here: kubectl needs the human credential for the auth plugin, and that identity
 # can read Secret Manager because it is the project owner.
-secrets:
+# `SECRETS=name[,name]` renders a subset; `CHECK_ONLY=1` validates against the API
+# without writing. A rendered Secret is not yet a running value: a container keeps
+# the environment it started with, so a rotation reaches a pod when it is replaced.
+secrets: ## render Secret objects from Secret Manager (SECRETS=… to target, CHECK_ONLY=1 to validate)
 	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/render-secrets.sh $(NS) $(SECRETS)
 
 # The M5 order: migration Job first, then the workloads, then the rollout. It reads
