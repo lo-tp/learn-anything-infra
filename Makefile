@@ -20,6 +20,9 @@ help: ## this list
 	@echo 'Variables: ROOT=bootstrap|gcp (default gcp), NS=$(NS), ENV=prod|staging (deploy),'
 	@echo '           SECRETS=name,name (render one), CHECK_ONLY=1 (validate, do not write),'
 	@echo '           TF_ARGS=-auto-approve, SKIP_MIGRATE=1 (deploy).'
+	@echo 'Machine: GCP_PROXY=$(GCP_PROXY), GCRED=$(GCRED), SDK=$(SDK),'
+	@echo '         KUBECONFIG=$(KUBECONFIG), REPO_ROOT (secret-hygiene: the parent of'
+	@echo '         this repo unless overridden). Nothing here is a fact about one laptop.'
 
 tf-fmt: ## format the Terraform roots
 	terraform fmt -recursive
@@ -50,7 +53,10 @@ tf-bootstrap: ## init, apply and print outputs for the bootstrap/ root
 # active gcloud credential is a service-account key (AGENTS.md, "Cluster access").
 # Keeping these targets apart from the Terraform ones is what stops one identity
 # leaking into the other's work.
-SDK        = $(CURDIR)/google-cloud-sdk/bin
+# Where gcloud and gke-gcloud-auth-plugin live. The SDK is gitignored and belongs
+# outside the repo; on a machine where it is installed the normal way, override:
+#   make kcreds SDK=/opt/homebrew/bin
+SDK ?= $(CURDIR)/google-cloud-sdk/bin
 KUBECONFIG ?= $(CURDIR)/.kubeconfig-gke
 # Anything that shells out to gcloud needs the bundled SDK on PATH; anything that
 # talks to the cluster additionally needs the generated kubeconfig. Split so a

@@ -25,8 +25,12 @@ ns="${1:-learn-anything}"
 project="${PROJECT_ID:?PROJECT_ID must be set}"
 
 # The repositories this product is made of. Absolute paths on purpose: this is a
-# cross-repo claim, and a relative path would quietly check less than it says.
-repo_root="${REPO_ROOT:-$HOME/Desktop/Personal/project}"
+# cross-repo claim, and a relative path would quietly check less than it says. The
+# default is derived — the directory that contains this repo — because an absolute
+# path baked into a tracked file is a fact about one laptop. A repository that is
+# not checked out is reported as "not present, not checked", never skipped quietly.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"      # <repo>/scripts
+repo_root="${REPO_ROOT:-$(dirname "$(dirname "$here")")}"  # the directory holding the repos
 repos=(
   "$repo_root/learn-anything-infra"
   "$repo_root/python/learn-anything-backend"
