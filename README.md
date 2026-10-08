@@ -6,12 +6,11 @@ from one Google Kubernetes Engine cluster, declared here as code — Terraform f
 every cloud resource, Kustomize for every cluster object.
 
 The interesting part is not the topology, which is ordinary. It is that the design
-was chosen under two constraints that are visible in every file here: **a dated
-budget** (a $300 trial credit that expires 2027-01-06, which sets a hard ceiling of
-$3.30/day) and **a network that fails selectively** (this machine is in mainland
-China, where some Google endpoints answer and others black-hole). Most of what the
-docs record is what those two constraints did to a plan that looked reasonable on
-paper.
+had to survive **a network that fails selectively**: this machine is in mainland
+China, where some Google endpoints answer and others black-hole entirely, and a
+private-node cluster has no internet egress at all unless the VPC has a NAT gateway.
+Most of what these docs record is what that did to a plan that looked reasonable on
+paper, and the places where measurement overturned the design.
 
 ## The shape
 
@@ -36,20 +35,19 @@ the cluster. `/api/compile` is deliberately never public.
 
 There is one environment. `overlays/staging/` exists — everything at zero, the
 backup suspended — but it has never been applied, and it has no address and no
-records: a second environment would be a second address and a second monthly line,
-which is a decision rather than a config change
+records: a second environment would mean a second address, a second forwarding rule
+and a second certificate, which is a decision rather than a config change
 ([ADR 0006](./docs/adr/0006-one-environment-until-the-second-is-priced.md)).
 
 ## What is *not* in this repo
 
-Four things are missing on purpose, and each has a reason that a reader would
+Three things are missing on purpose, and each has a reason that a reader would
 otherwise guess wrong:
 
 | not here | where it is | why |
 |---|---|---|
 | secret **values** | Secret Manager | `make secrets` renders the cluster Secrets from them; no credential is ever committed, and `make secret-hygiene` proves it |
 | DNS records | Namecheap, typed by hand | its API allowlists single IPs, not ranges, so CI cannot drive it ([ADR 0004](./docs/adr/0004-dns-stays-at-namecheap.md)) — the record set is still *declared* here, and `terraform output dns_records` prints exactly what belongs in the dashboard |
-| the billing export | one console setting | there is no API for it and it is not backfilled; `make cost-report` reads it |
 | the app images | built in each app's repo | this repo consumes digests and pins them; the Dockerfiles live with the code |
 
 ## How a change reaches production
@@ -87,7 +85,6 @@ runs:
 | `make dns-check` | Terraform, the live Ingress, what the registrar answers, and the certificate's actual SANs agree |
 | `make acceptance` | a real session completes through the public surface: register → login → plan → slides |
 | `make restore-drill` | the newest dump actually restores, and its table shapes match the live database |
-| `make cost-report` | what the platform costs, **with cost and credits printed separately** — the invoice being small is not the same fact as the platform being cheap |
 | `make secret-hygiene` | no secret value in any repo or running image, and shared pairs match across services by hash |
 
 ## Reading order
@@ -95,16 +92,17 @@ runs:
 | file | for |
 |---|---|
 | [`AGENTS.md`](./AGENTS.md) | how to operate this: the proxy environment, why `gcloud` creates nothing, why `kubectl` and Terraform use different identities, the failure modes that look like something they are not |
-| [`CONTEXT.md`](./CONTEXT.md) | the vocabulary — *surface*, *public surface*, *internal call*, *foreign record*, *cutover*, *turn-off order*, *replica floor* vs *billing floor* |
+| [`CONTEXT.md`](./CONTEXT.md) | the vocabulary — *surface*, *public surface*, *internal call*, *foreign record*, *cutover*, *turn-off order* |
 | [`docs/adr/`](./docs/adr/) | why the load-bearing choices went the way they did, including the ones where measurement overturned the design |
-| [`docs/plan/`](./docs/plan/index.md) | a working document: the milestones, each with the condition that said it was done, and the dated findings of what actually happened |
+| [`docs/plan/`](./docs/plan/index.md) | the plan's index — the inputs the design depends on, the milestones in order, and the assumptions with their current standing; each milestone is a file under [`docs/plan/`](./docs/plan/) carrying its own completion criterion and dated findings |
 
 The milestone files under `docs/plan/` are the honest record of a plan meeting reality: an
 `ingress.kubernetes.io/force-ssl-redirect` annotation that the controller ignores
-because it is nginx's spelling; a woken tier answering 502 for minutes after its
-pod is Ready because the NEG attaches late; a scale-from-zero design that does not
-survive an Application Load Balancer with no queueing mechanism, and the arithmetic
-that showed the alternative cost as much as the thing it saved.
+because it is nginx's spelling; a woken tier answering 502 for minutes after its pod
+is Ready because the NEG attaches late; a scale-from-zero design that does not
+survive an Application Load Balancer with no queueing mechanism, and the measurement
+that showed the queueing alternatives would have needed control-plane pods of their
+own.
 
 ## What works, and what is open
 
@@ -123,9 +121,6 @@ Open, and named rather than hidden:
 - **Cutover is incomplete.** The old Render services still run; stopping them is a
   dashboard action. Nothing carries over from that database
   ([ADR 0005](./docs/adr/0005-no-render-data-carries-over.md)).
-- **Cost is not yet measured.** `make cost-report` exits 2 until the billing export
-  is switched on, and nothing before that day is backfilled. The plan's cost tables
-  are estimates and say so; the checkpoints in M10 replace them with billed figures.
 
 ## Four repositories
 
