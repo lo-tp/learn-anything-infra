@@ -140,4 +140,11 @@ mock-off: ## take MOCK_LLM off without waiting for a deploy
 restore-drill: ## pg_restore the newest archive into a scratch database and compare
 	$(kenv) DUMP_BUCKET=$(shell $(AUTH) $(GCP_ENV) terraform -chdir=gcp output -raw pgdump_bucket 2>/dev/null) ./scripts/restore-drill.sh $(NS)
 
-.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images acceptance mock-on mock-off restore-drill
+# M10: the numbers instead of the estimates. Needs the BigQuery billing export,
+# which is a one-time console act and is not backfilled — the script says so and
+# exits 2 rather than pretending. Credits are reported separately from cost on
+# purpose: the trial credit makes the invoice small, not the platform cheap.
+cost-report: ## what the platform actually costs, by service and SKU
+	$(GCP_ENV) python3 scripts/cost-report.py $(ARGS)
+
+.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images acceptance mock-on mock-off restore-drill cost-report

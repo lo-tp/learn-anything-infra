@@ -7,9 +7,13 @@ workloads. Hand-edited cloud consoles and imperative `kubectl apply` of
 undocumented manifests are out of sync with this repo by definition; treat this
 repo as the single source of truth. Nothing here is provisioned with `gcloud`: the
 GCP project, its APIs, the cluster, the storage and the budgets are all
-Terraform's, and `kubectl` only talks to a cluster it did not create. One thing
+Terraform's, and `kubectl` only talks to a cluster it did not create. Two things
 Terraform deliberately does not create: the DNS records
-([ADR 0004](./docs/adr/0004-dns-stays-at-namecheap.md)).
+([ADR 0004](./docs/adr/0004-dns-stays-at-namecheap.md)), and the **BigQuery
+billing export** — a one-time console setting (Billing → Budgets & costs → Billing
+export → *BigQuery usage export* → this project) that M10's `make cost-report`
+reads. Nothing is backfilled into it, so the day it is enabled is the first day
+the platform is measurable.
 
 The Google Cloud SDK **is** installed (`google-cloud-sdk/` in this working tree,
 gitignored, and better placed outside the repo). Its permitted jobs are

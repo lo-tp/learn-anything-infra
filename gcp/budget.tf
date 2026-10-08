@@ -1,10 +1,14 @@
-# Two budgets with different jobs.
+# Two budgets with different jobs, and the difference is which one of them sees
+# credits.
 #
 # 1. The platform budget, filtered to this project: the ceiling from PLAN.md, per
-#    calendar month. INCLUDE_ALL_CREDITS is the part that matters — while the
-#    trial credit hides the cost on the bill, this budget still measures real
-#    consumption, which is the only way the 90-day constraint is observable
-#    before it becomes an invoice.
+#    calendar month. `EXCLUDE_ALL_CREDITS` is the part that matters, and it was
+#    wrong here until M10 — the field "specifies how credits should be treated when
+#    determining spend for threshold calculations", so the previous
+#    `INCLUDE_ALL_CREDITS` meant the trial credit *subtracted* itself out of the
+#    number being watched. A tripwire that measures net-of-credit spend cannot fire
+#    while the credit lasts, which is precisely the period it exists to watch. This
+#    budget therefore measures what the platform *costs*.
 resource "google_billing_budget" "platform" {
   billing_account = var.billing_account_id
   display_name    = "learn-anything platform (this project)"
@@ -16,7 +20,7 @@ resource "google_billing_budget" "platform" {
     # shows a change is a plan nobody reads.
     projects               = ["projects/${google_project.main.number}"]
     calendar_period        = "MONTH"
-    credit_types_treatment = "INCLUDE_ALL_CREDITS"
+    credit_types_treatment = "EXCLUDE_ALL_CREDITS"
   }
 
   amount {
@@ -40,8 +44,12 @@ resource "google_billing_budget" "platform" {
     spend_basis       = "FORECASTED_SPEND"
   }
 
-  # No all_updates_rule: default recipients are the Billing Account Users and
-  # Administrators, and on this account that is you.
+  # No notification rule needed for the email path: threshold alerts go to the
+  # default recipients — the Billing Account Administrator and User roles on this
+  # account, which is you — unless `all_updates_rule.disable_default_iam_recipients`
+  # is set. Worth stating, because "no notifications_rule in the file" reads like a
+  # missing feature. It was checked rather than assumed: the API returns an empty
+  # `notificationsRule`, and the documented default is delivery to those roles.
 
   # Budgets need both the Billing Budgets API and a grant on the billing account
   # itself (see iam.tf); neither is implied by the project.
@@ -52,6 +60,10 @@ resource "google_billing_budget" "platform" {
 #    billing account without this repo knowing about it. You confirmed this
 #    project is the only consumer, so silence is the expected state; a firing
 #    canary means something unknown is spending your January.
+#
+# It keeps `INCLUDE_ALL_CREDITS` on purpose: the canary is the wallet's question —
+# *am I actually paying* — and the answer is net of credits. Two budgets, two
+# bases, one fact each.
 resource "google_billing_budget" "account_canary" {
   billing_account = var.billing_account_id
   display_name    = "canary: anything on this billing account outside the plan"
