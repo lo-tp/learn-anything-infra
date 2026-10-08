@@ -74,6 +74,10 @@ jobs:
           # script says which form it wrote.
           set -euo pipefail
           ./scripts/ci-kubeconfig.sh "$RUNNER_TEMP/kubeconfig-ci"
+          # Both, not either: `$GITHUB_ENV` is for later steps, and `export` is for
+          # the rest of this one. Writing only the first is how kubectl ends up
+          # asking localhost:8080 what it meant.
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig-ci"
           echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig-ci" >> "$GITHUB_ENV"
           kubectl get --raw /readyz >/dev/null
           echo "control plane reachable as $(kubectl auth whoami --output=jsonpath='{.status.userInfo.username}' 2>/dev/null || echo unknown)"
