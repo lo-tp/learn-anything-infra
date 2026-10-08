@@ -45,8 +45,9 @@ foundation. The *why* behind each load-bearing choice lives in
    [`AGENTS.md`](./AGENTS.md). Two things stay outside Terraform's reach and both
    are one-time: the free-trial signup (no API for it) and the credentials — see
    Step 0.
-- **Nothing is deployed yet except the Render blueprint in the backend repo**, and
-  that is what we are leaving.
+- **Nothing was deployed here when this plan began**; the only deployment the
+  product had was the Render blueprint in the backend repo, and that is what this
+  plan was leaving. It has since been deleted (M9).
 
 ## Step 0 — the three things only you can do
 
@@ -497,9 +498,10 @@ Things it took to get right, each of which would have been worse to meet later:
   `postgresql://` URL); an asyncpg URL would have survived that rewrite and then
   failed at connect time.
 
-Not yet done, and it belongs on the list: **the dump has never been restored.**
-Writing an archive is not the same as having a recovery, and the first time this
-archive is read should not be the time it is needed. M9 has the restore drill.
+**The dump has been restored** (M9, `make restore-drill`): the newest archive into a
+scratch database in the same cluster, table shapes compared. Writing an archive is
+not the same as having a recovery, and the drill is now a command so that the claim
+stays true without anyone remembering to re-check it.
 
 `scripts/render-secrets.sh` (and `make secrets`) is the bridge from Secret Manager
 to cluster Secret. It is deliberately dumb; M7 moved *who runs it* into the
@@ -851,6 +853,51 @@ into the in-cluster database with `pg_restore`, not by hand, so the nightly back
 has been exercised by the time it is the only recovery path (M4 wrote archives;
 nothing has restored one yet).
 
+**Status: one clause done, one decided, two waiting on a hand at a dashboard and
+the M8 key.**
+
+- **No data carries over (decided 2026-10-08).** The Render Postgres is left where
+  it is; the in-cluster database starts empty and is the only database the product
+  has. That is a decision, not an oversight: what is on Render is development
+  history — sessions made while building the app — and carrying it in would mean
+  shipping user-visible rows whose LLM answers came from a different model at a
+different  quality, into a product about to be judged on its output. If something
+  there is ever wanted, the dump-and-restore path exists and is the one described
+  below.
+- **`render.yaml` is gone** (backend `d90b13e`), and with it the "Deploy (Render)"
+  section of that README, `scripts/build.sh` — whose only user was the blueprint's
+  `buildCommand`, its three steps now living in the Dockerfile, the CI workflow and
+  the migration Job — and the comments that compared the Dockerfile to a build that
+  no longer happens. This repository is the only place that says where the product
+  runs.
+- **"No Render service is serving traffic" needs a click in a dashboard**, not a
+  command in this repo: Blueprint → each service → **Stop Service**, then the free
+  Postgres instance. Until that happens two deployments share nothing but a name:
+  different `JWT_SECRET`, different database, different users. That is not a
+  correctness problem, and it is the reason "which one am I using?" should be
+  answered in favour of the surfaces, not left ambiguous.
+- **"Serves a real session" is M8's, in the literal sense**: it cannot be observed
+  until `openai-api-key` / `openai-base-url` / `llm-model` hold a real endpoint.
+  The surface, the auth and the sandbox fetch are already proven green through the
+  public host (`make acceptance`, M6); the model is the only unresolved hop.
+- **The restore drill ran (2026-10-08, ~02:00 local), and it is now a command:
+  `make restore-drill`.** The newest nightly archive —
+  `learn_anything-2026-10-07T17:30:05Z.sql.gz` — was copied into a throwaway
+  postgres pod in the same namespace (no network from the pod: these pods have no
+  egress, and a drill that needed it would be a second thing to debug) and
+  `pg_restore`d into a scratch database in 3 seconds. It produced the same 11
+  tables the live database has, with matching row counts everywhere except
+  `sessions` (live 1, archive 0) and `users` (live 6, archive 3) — which is the
+  expected shape of the truth: the archive is a snapshot from 17:30Z, and the
+  M6/M8 acceptance runs happened after it. The script prints that reasoning next to
+  the numbers, because "differs" is otherwise easy to misread as corruption.
+  Teardown is the exit trap, so a skipped cleanup cannot happen by forgetting.
+- One lesson the drill paid for: `kubectl exec` lands in the postgres image as
+  **root**, so `pg_restore`/`psql` without `-U postgres` fail with `role "root"
+  does not exist` — on the scratch pod only; the live database's app role is
+  `learn`. Two different superusers in one command, which is worth writing down
+  somewhere.
+
 ## M10 — Verify the budget claim with numbers
 
 The clock is fixed, so this is arithmetic rather than a feeling. Against
@@ -886,8 +933,8 @@ broke it.
 - What happens at day 91 is "start paying": this plan therefore optimises for
   durability and a documented teardown, not for a clean `terraform destroy`.
 - No environment beyond `prod` and the scale-to-zero `staging`.
-- Whether Render's database holds data worth keeping — unverified; M9 treats it as
-  an open decision.
+- Whether Render's database holds data worth keeping — **decided on 2026-10-08:
+  no.** No carryover; the in-cluster database is the only one (see M9).
 - Per-component cost figures in this plan are estimates I have not verified
   against Google's pricing page: **M1 replaces them with real numbers before M2
   starts.**

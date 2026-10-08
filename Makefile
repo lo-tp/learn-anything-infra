@@ -134,4 +134,10 @@ mock-on: ## set MOCK_LLM=1 on the live backend (drift on purpose; make deploy re
 mock-off: ## take MOCK_LLM off without waiting for a deploy
 	$(kenv) kubectl -n $(NS) set env deployment/backend MOCK_LLM-
 
-.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images acceptance mock-on mock-off
+# The restore drill (M9): read the newest nightly archive back into a throwaway
+# database in the same cluster and compare table shapes. A backup that has never
+# been read is a hope, not a recovery path. Tears the scratch pod down on exit.
+restore-drill: ## pg_restore the newest archive into a scratch database and compare
+	$(kenv) DUMP_BUCKET=$(shell $(AUTH) $(GCP_ENV) terraform -chdir=gcp output -raw pgdump_bucket 2>/dev/null) ./scripts/restore-drill.sh $(NS)
+
+.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images acceptance mock-on mock-off restore-drill
