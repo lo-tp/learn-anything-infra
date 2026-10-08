@@ -49,9 +49,9 @@ resource "google_compute_router" "main" {
 # kilobytes per call, so the egress term is noise; the gateway term is the one to
 # watch, and M10 reads it from the bill rather than from this comment.
 resource "google_compute_router_nat" "main" {
-  name                               = "learn-anything-egress"
-  router                             = google_compute_router.main.name
-  region                             = var.region
+  name   = "learn-anything-egress"
+  router = google_compute_router.main.name
+  region = var.region
   # Auto-allocated Google-owned addresses: a listed-NAT configuration would mean
   # paying for static external IPs we have no reason to pin.
   nat_ip_allocate_option             = "AUTO_ONLY"
