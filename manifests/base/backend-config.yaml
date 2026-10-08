@@ -24,6 +24,18 @@ metadata:
     app.kubernetes.io/name: backend
     app.kubernetes.io/part-of: learn-anything
 spec:
-  # Two minutes: long enough for a real model turn, short enough that a hung
-  # upstream is still a visible failure rather than a slow page.
-  timeoutSec: 120
+  # Ten minutes, chosen deliberately rather than maximally: the API accepts up to
+  # 2³¹−1 seconds, and nothing about the bill changes with this number (load
+  # balancing is billed per forwarding rule and per GB processed, not per second of
+  # patience). What a larger ceiling buys is *capacity held*: a session phase is
+  # synchronous, so a request that lives for ten minutes occupies a worker for ten
+  # minutes, and at one replica that queue is the cost. It also lets more retries
+  # live long enough to happen, which is the only part of this that is money.
+  #
+  # The consequence of setting it high is that this is no longer the first limit to
+  # be hit: the backend's own HTTP client timeouts for the model call, and the
+  # frontend's fetch timeouts, sit below it and will answer first. If a turn ever
+  # needs genuinely more than a few minutes, the fix is an asynchronous phase
+  # (`/plan/approve` and `/sessions/{id}/materials` already work that way), not a
+  # larger number here.
+  timeoutSec: 600

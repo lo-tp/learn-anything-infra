@@ -798,7 +798,13 @@ failure a result rather than a crash).
 - **The balancer's 30-second backend timeout is a functional limit, not a tuning
   knob.** A still-running request came back as Google's HTML 502 at 30.8 s while
   the pod kept working. `manifests/base/backend-config.yaml` now carries one
-  field — `timeoutSec: 120` — attached to the backend Service by annotation. (The
+  field — `timeoutSec`, attached to the backend Service by annotation. It went in at
+  120 s and you set it to **600 s**: the API accepts up to 2³¹−1 seconds and bills
+  nothing for the value, so the cost of a longer ceiling is held request capacity
+  (a synchronous phase occupies a worker for its whole life, at one replica that is
+  a queue) and the retries that get to live long enough to happen — inference, the
+  only part that is money. The limits that bind before it are the app's own client
+  timeouts, which are defaults in code this repo does not own. (The
   health-check `BackendConfig`s M6 deleted stay deleted: that field is ignored here,
   this one is the documented mechanism for timeouts.)
 - **Two contract facts the walk taught, both now written into the script rather

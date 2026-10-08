@@ -99,9 +99,11 @@ pod, `api.openai.com` never completes a TCP connection while
 `storage.googleapis.com` answers in a tenth of a second. M8 found it by measuring
 from a pod instead of reasoning from the laptop. `gcp/network.tf` carries the
 router and the NAT; if a workload ever needs an external API, that is the first
-line to check, and the second is the load balancer's request timeout
-(`manifests/base/backend-config.yaml`, 120 s), which turns a slow upstream into a
-Google-authored 502 at 30 s.
+line to check, and the second is the load balancer's request timeout: at its
+30-second default it turned a still-running request into a Google-authored 502.
+`manifests/base/backend-config.yaml` raises it to 600 s — nothing is billed for the
+number itself, what a longer ceiling costs is held request capacity and extra
+retries — and the limits that bind before it are the apps' own client timeouts.
 
 ## Container images: podman, not Docker
 
