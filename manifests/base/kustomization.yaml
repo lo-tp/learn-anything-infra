@@ -17,6 +17,8 @@
 # is the only version of that table worth trusting.
 resources:
   - backend.yaml
+  # The request-timeout ceiling, attached to the Service by annotation.
+  - backend-config.yaml
   - frontend.yaml
   - sandbox.yaml
   - database.yaml

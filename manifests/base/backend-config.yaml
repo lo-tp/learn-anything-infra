@@ -1,0 +1,29 @@
+# One field, and it is a ceiling on what a request can be.
+#
+# The load balancer's default backend timeout is 30 seconds. That is not
+# theoretical here: an acceptance request that reached the backend and was still
+# working when the balancer gave up came back as an HTML 502 from Google at
+# 30.8 s — while the pod kept working on it. A model turn can take longer than
+# that, and the session phases that call a model are synchronous by design
+# (`POST /sessions`, `/clarify`, `/probe`), so without this line the platform's
+# limit, not the model's, decides how long one turn may be.
+#
+# This is the one BackendConfig this project needs. The health-check blocks that
+# used to be here are gone on purpose: this controller builds the load balancer's
+# health check from the workload's readiness probe, and three BackendConfigs with
+# correct `healthCheck` blocks changed nothing (M6's notes). A timeout is a
+# different field, and the documented one
+# (https://cloud.google.com/kubernetes-engine/docs/concepts/backend-config).
+#
+# Attached to the Service by annotation; the balancer reads it from there.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: backend-request-timeout
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: learn-anything
+spec:
+  # Two minutes: long enough for a real model turn, short enough that a hung
+  # upstream is still a visible failure rather than a slow page.
+  timeoutSec: 120

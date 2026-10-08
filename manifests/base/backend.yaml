@@ -85,6 +85,10 @@ metadata:
   labels:
     app.kubernetes.io/name: backend
     app.kubernetes.io/part-of: learn-anything
+  annotations:
+    # How the load balancer finds the BackendConfig next to it. The JSON names the
+    # *default* backend of this Service; a single-port service still has to say so.
+    cloud.google.com/backend-config: '{"default": "backend-request-timeout"}'
 spec:
   type: ClusterIP
   selector:
