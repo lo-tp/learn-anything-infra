@@ -3,7 +3,8 @@
 # credentials**, for a CI job that has a workload-identity federation and no
 # `gcloud auth login`.
 #
-# The laptop does the opposite on purpose (AGENTS.md, "Cluster access"): there,
+# The laptop does the opposite on purpose (AGENTS.md: kubectl uses the human
+# identity on purpose): there,
 # kubectl must use the human identity, because Terraform's identity is a service
 # account key and `gke-gcloud-auth-plugin` shells out to `gcloud config
 # config-helper`, which crashes on an active service-account credential. That

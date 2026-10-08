@@ -6,6 +6,22 @@
 # default: deleting this StatefulSet deletes the data. That is survivable because
 # the nightly dump in db-backup.yaml is the recovery path, and it is the reason
 # that CronJob is not optional decoration.
+# The dumps go to the bucket named by `terraform output pgdump_bucket`, and the
+# backup service account holds `roles/storage.objectCreator` only: it can write a
+# dump and cannot read the bucket back. Reading and restoring use a human identity.
+#
+# Reaching this database, the two ways that are actually useful:
+#
+#   # inside the cluster — the postgres image ships psql, so no port-forward needed
+#   kubectl -n learn-anything exec learn-anything-db-0 -- psql -U learn -d learn_anything
+#
+#   # from the laptop, for `alembic`: the password is in the Secret this deploy
+#   # renders, which comes from Secret Manager (`db-password`) via `make secrets`
+#   kubectl -n learn-anything port-forward svc/learn-anything-db 5433:5432
+#   # DATABASE_URL=postgresql+psycopg://learn:<password>@127.0.0.1:5433/learn_anything
+#
+# `kubectl exec` lands in this image as **root**, so psql and pg_restore need `-U`;
+# without it they ask for a role `root` that does not exist.
 apiVersion: v1
 kind: Service
 metadata:
