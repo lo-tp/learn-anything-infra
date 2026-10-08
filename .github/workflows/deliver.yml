@@ -22,14 +22,19 @@
 # `git revert` the pin and push it, and `deploy.yml` runs again against the previous
 # digests. (`docs/adr/0007`.)
 #
-# The schedule is a safety net in *intent* — events get missed — but it has never
-# fired here. Checked on 2026-10-08 across every run this repository has: 16 `push`,
-# 7 `workflow_dispatch`, **zero `schedule`** — including the daily pin cron that used
-# to live in this file, which likewise never produced a run. So the dispatch below is
-# the only trigger that has been seen to work, and the human fallback is
-# `gh workflow run deliver.yml -R lo-tp/learn-anything-infra`. The job is idempotent
-# either way: if production already names the newest published images, it says so and
-# changes nothing.
+# There is no schedule here, and there used to be one. It was removed on 2026-10-08
+# after checking this repository's whole run history: 16 `push`, 7 `workflow_dispatch`,
+# zero `schedule` — the daily pin cron that preceded this workflow never fired either.
+# Config that has never run is a claim, not a capability, so the triggers are the two
+# that exist: the hand-off from an application repository, and a human.
+#
+# A human starts it two ways, and both end in this job — `make deliver` in this
+# repository (or `make release-check` to ask without changing anything), and Actions →
+# "deliver" → Run workflow. With `mode: check` it answers "are there newer images?"
+# and touches nothing; with `deliver` it pins what is newer and deploys it.
+#
+# The job is idempotent either way: if production already names the newest published
+# images, it says so and changes nothing.
 
 name: deliver
 
@@ -56,14 +61,14 @@ on:
         description: The branch it was published from
         required: false
         type: string
-  # Intended as the safety net; **not observed to have run**. No `schedule`-event run
-  # exists in this repository's history (checked 2026-10-08), and GitHub has open
-  # reports of cron triggers creating no run at all on free-plan accounts. The
-  # configuration is correct and costs nothing on a public repository, so it stays —
-  # but a fallback nobody has seen is a hope, not a fallback, and the check is
-  # `gh run list -R lo-tp/learn-anything-infra --event=schedule`.
-  schedule:
-    - cron: "*/15 * * * *"
+      mode:
+        description: What to do
+        required: false
+        type: choice
+        default: deliver
+        options:
+          - deliver   # pin what is newer and deploy it
+          - check     # only report what is newer; change nothing
 
 # One delivery at a time. Two of these racing would mean two commits touching the
 # same `images:` block and two deploys racing on the same migration Job.
@@ -101,17 +106,27 @@ jobs:
           service_account: ${{ env.WIF_SERVICE_ACCOUNT }}
           access_token_lifetime: 600s
 
-      # Exit 1 means "the overlay and the registry disagree" — the reason to be
-      # here. Exit 0 means production already names the newest published images.
+      # Exit 1 means "the overlay and the registry disagree" — newer images exist.
+      # Its own output is the answer to the question a human asked, so it goes in the
+      # run summary as well as the log: a "check" run should be readable from the
+      # Actions page, not only from the log of a step nobody scrolls through.
       - id: plan
         name: Compare the pins with what was published
         run: |
           set -euo pipefail
           ./scripts/pin-image.sh --dry-run | tee plan.txt
+          {
+            echo "### Images: production vs what is published"
+            echo '```'
+            sed -n '/candidate images:/,$p' plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
         continue-on-error: true
 
+      # Anything other than an explicit `check` delivers, so a dispatch that passes no
+      # mode still ships — the safe default for a job whose whole purpose is shipping.
       - name: Pin the published images and deploy them
-        if: steps.plan.outcome == 'failure'
+        if: steps.plan.outcome == 'failure' && github.event.inputs.mode != 'check'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_RUN: ${{ inputs.source_run }}
@@ -166,8 +181,13 @@ jobs:
           case "${{ steps.plan.outcome }}" in
             success) echo "no pin change: production already names the newest published images" ;;
             failure)
-              echo "pinned and dispatched; the deploy is here:"
-              gh run list --workflow=deploy.yml --limit 1 --json url,status -q '.[0] | "\(.url) (\(.status))"'
+              if [ "${{ github.event.inputs.mode }}" = "check" ]; then
+                echo "newer images exist and nothing was changed (mode=check). To ship them:"
+                echo "  gh workflow run deliver.yml -R lo-tp/learn-anything-infra   (or, in this repo: make deliver)"
+              else
+                echo "pinned and dispatched; the deploy is here:"
+                gh run list --workflow=deploy.yml --limit 1 --json url,status -q '.[0] | "\(.url) (\(.status))"'
+              fi
               ;;
             *) echo "this job did not run" ;;
           esac

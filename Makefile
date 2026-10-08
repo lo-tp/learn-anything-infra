@@ -120,10 +120,45 @@ secret-hygiene: ## no secret in a repo or an image, and the shared pairs match
 	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/secret-hygiene.sh $(NS)
 
 # What the registry now holds as published, written into the production overlay.
-# Same script the scheduled pin-image workflow runs; committing the result is
-# still a human act, which is why this does not commit for you.
+# The same script `deliver.yml` runs. Committing the result is still a human act,
+# which is why this does not commit for you — and why `make deliver` below is the
+# usual way to ship: it starts the workflow instead of doing this by hand.
 pin-images: ## pin production to the newest published images by hand (CI does this on release)
 	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/pin-image.sh
+
+# The human-triggered question, asked without changing anything: are there newer
+# Docker images than production names? Exit 1 is the answer "yes", with the table of
+# what disagrees — the same comparison the pipeline makes, run against the file rather
+# than the cluster, because the file is what decides what runs.
+#
+# The guard is not decoration: this Makefile resolves PROJECT_ID once, at parse time,
+# from `terraform output`, and that call goes through a proxy and sometimes fails to an
+# empty string. Without the guard the script's "PROJECT_ID must be set" error looks
+# exactly like the answer "newer images exist" — a failure to ask read as an answer.
+release-check: ## is anything newer published than production names? (changes nothing)
+ifeq ($(strip $(PROJECT_ID)),)
+	@echo "cannot ask: PROJECT_ID resolved to nothing (the parse-time 'terraform -chdir=gcp output -raw project_id' failed)."
+	@echo "Re-run, or pass it explicitly: make release-check PROJECT_ID=learn-anything-510905"
+	@exit 2
+else
+	@set -eu; if $(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/pin-image.sh --dry-run; then \
+	  echo "nothing newer: production already names the newest published images"; \
+	else \
+	  echo ""; echo "newer images exist (listed above). Ship them with: make deliver"; exit 1; \
+	fi
+endif
+
+# The human-triggered release. It deliberately does not pin or deploy from this
+# laptop: it starts the same workflow an application repository hands off to, so there
+# is one path to production whoever pulls the trigger. The run it starts pins the
+# newer digests as a commit naming this request, then runs the deploy order —
+# migrations, workloads, rollout, drift check, public surfaces.
+deliver: ## ship whatever images are newer than production names it
+	gh workflow run deliver.yml --ref main -f mode=deliver \
+	  -f source_repo="human: $(shell git config user.name 2>/dev/null || echo unknown)" \
+	  -f source_branch="make deliver"
+	@sleep 5
+	@gh run list --workflow=deliver.yml --limit 1 --json url,status -q '.[0] | "  started: \(.url) (\(.status))"'
 
 # M8's acceptance walk: one complete session through the public surface, printed as
 # a table (register → sign in → clarify → probe → plan → approve → materials → the
@@ -159,4 +194,4 @@ restore-drill: ## pg_restore the newest archive into a scratch database and comp
 cost-report: ## what the platform actually costs, by service and SKU
 	$(gcloudenv) python3 scripts/cost-report.py $(ARGS)
 
-.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images acceptance mock-on mock-off restore-drill cost-report
+.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images release-check deliver acceptance mock-on mock-off restore-drill cost-report

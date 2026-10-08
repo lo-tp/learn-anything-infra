@@ -51,13 +51,13 @@ the change was tested.
   revert — the same constraint as before, now with less ceremony around it.
 - Deploys become more frequent and smaller, which is the point: a change that
   reaches production alone is a change whose cause is known.
-- The scheduled reconciliation run stays in the configuration as a safety net, and is
-  **not claimed as behaviour**: no `schedule`-event run exists in this repository's
-  history (checked 2026-10-08 — 16 `push`, 7 `workflow_dispatch`, zero `schedule`,
-  including the daily pin cron that preceded this workflow, which also never fired).
-  Until one appears, the hand-off dispatch is the only trigger known to work, and the
-  fallback is a person: `gh workflow run deliver.yml`, or `make pin-images` followed by
-  `make deploy` from a laptop.
+- **There is no schedule.** One was configured, twice, in two different workflows, and
+  it never fired: this repository's entire history is 16 `push` runs,
+  7 `workflow_dispatch` runs and **zero `schedule` runs**. The cron was deleted on
+  2026-10-08 rather than kept as a hope. So the triggers are exactly two — an
+  application repository's hand-off, and a human: `make release-check` to ask whether
+  newer images exist, `make deliver` to ship them through this same workflow. A
+  capability you have seen beats one you have only configured.
 - One path to production, not two: the pin job *dispatches* `deploy.yml` explicitly,
   because a push made with `GITHUB_TOKEN` starts no workflows. The laptop path
   (`make deploy`) still exists and does the identical thing through a different

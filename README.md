@@ -75,7 +75,12 @@ discipline:
    unapplied change or something edited in the cluster; both are facts worth having
    before the next deploy. Then it curls the public surfaces from outside the
    cluster: converged is not the same as serving.
-5. **Rollback is a git act.** `git revert` the pin commit and push it, and the
+5. **Nothing waits on a timer, because the timer was never observed to tick.** If
+   images were published and never handed over — a revoked `DELIVERY_TOKEN`, a
+   workflow edited so the step vanished — a human asks or ships directly:
+   `make release-check` answers whether newer images exist than production names,
+   `make deliver` pins and deploys them through this same workflow.
+6. **Rollback is a git act.** `git revert` the pin commit and push it, and the
    deploy runs again against the previous digests — which is why the pin is a commit
    and not a dashboard setting ([ADR 0007](./docs/adr/0007-the-merge-into-release-is-the-approval.md)).
 
@@ -88,6 +93,8 @@ runs:
 |---|---|
 | `make tf-plan` / `tf-apply-yes` | the cloud matches `gcp/` — and, since the state bucket exists, that it matches *versioned* state |
 | `make deploy` | the schema gate holds before anything serving is touched |
+| `make release-check` | whether newer images exist than production names — an answer, and no change |
+| `make deliver` | those images are pinned and deployed by the same workflow a `release` merge starts |
 | `make secrets` | every Secret the workloads read exists, and it says out loud when one still holds a placeholder |
 | `make dns-check` | Terraform, the live Ingress, what the registrar answers, and the certificate's actual SANs agree |
 | `make acceptance` | a real session completes through the public surface: register → login → plan → slides |
