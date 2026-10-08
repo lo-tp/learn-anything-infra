@@ -80,7 +80,7 @@ jobs:
           ns="$(awk '/^namespace:/{print $2; exit}' manifests/overlays/prod/kustomization.yaml)"
           ./scripts/render-secrets.sh "$ns"
 
-      - name: Deploy: migrations, then workloads, then rollout
+      - name: "Deploy: migrations, then workloads, then rollout"
         run: |
           set -euo pipefail
           ns="$(awk '/^namespace:/{print $2; exit}' manifests/overlays/prod/kustomization.yaml)"

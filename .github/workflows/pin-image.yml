@@ -70,16 +70,12 @@ jobs:
             echo "the pins match the registry after all (a race with another run); nothing to propose"
             exit 0
           fi
-          git commit -m "pin(images): what the registries now hold as published
-
-Each digest below is the newest image its repository published under a
-\`sha-<commit>\` tag, which in those repositories means: built by CI, and its
-smoke step passed. The tag and the build date are kept in the comment beside the
-digest so a human can find the run.
-
-Merging this runs deploy.yml (migrations, then workloads, then rollout).
-Merge it in the UI: a merge performed with the job's own token does not
-re-trigger workflows, and this pipeline depends on that distinction."
+          # Three -m flags, not one multi-line string: a YAML block scalar cannot
+          # contain lines that start at column 1, and a commit body written through
+          # a heredoc in a workflow file is a way to discover that at 3am.
+          git commit -m "pin(images): what the registries now hold as published" \
+            -m "Each digest below is the newest image its repository published under a sha-<commit> tag, which in those repositories means: built by CI, and its smoke step passed. The tag and build date are kept in the comment beside the digest so a human can find the run." \
+            -m "Merging this runs deploy.yml: migrations, then workloads, then rollout. Merge it in the UI — a merge performed with this job's own token would not re-trigger workflows."
           git push --force-with-lease -u origin "$branch"
 
           existing=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // ""')
