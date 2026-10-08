@@ -22,7 +22,7 @@
 set -euo pipefail
 
 ns="${1:-learn-anything}"
-project="${PROJECT_ID:?PROJECT_ID must be set}"
+project="${PROJECT_ID:-$("$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"/project-id.sh)}"
 
 # The repositories this product is made of. Absolute paths on purpose: this is a
 # cross-repo claim, and a relative path would quietly check less than it says. The

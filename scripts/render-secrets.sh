@@ -26,10 +26,11 @@
 # would work either way; the writes would not.)
 set -euo pipefail
 
-# Passed in rather than looked up: `make secrets` takes it from
-# `terraform output project_id`, so the script does not need Terraform state
-# credentials and there is still exactly one place that knows the value.
-PROJECT_ID="${PROJECT_ID:?set PROJECT_ID, e.g. via `make secrets`}"; 
+# Resolved by one place rather than passed around by every caller: an explicit
+# PROJECT_ID still wins, and without one the value comes from scripts/project-id.sh
+# (this repository's declared value, then the state). The old form demanded the
+# variable, which turned an upstream resolution failure into an error message here.
+PROJECT_ID="${PROJECT_ID:-$("$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"/project-id.sh)}"
 
 usage() {
   echo "usage: scripts/render-secrets.sh <namespace> [target ...]" >&2

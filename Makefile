@@ -77,7 +77,13 @@ kcheck: ## prove the control plane answers (no nodes on an idle Autopilot cluste
 # The namespace the production overlay deploys into, kept next to the Terraform
 # variable of the same name (variables.tf explains why both exist).
 NS ?= learn-anything
-PROJECT_ID := $(shell $(AUTH) $(GCP_ENV) terraform -chdir=gcp output -raw project_id 2>/dev/null)
+# Resolved when a recipe asks for it, never while this file is read. The previous
+# form (`:=` with `terraform output` and `2>/dev/null`) ran once at parse time, went
+# through a proxy, sometimes failed, and left PROJECT_ID the empty string — after
+# which every consumer reported its own confusing failure. `scripts/project-id.sh`
+# prefers the value this repository declares (offline, deterministic) and falls back
+# to the state; if it cannot resolve, it says so in one place.
+PROJECT_ID = $(shell ./scripts/project-id.sh 2>/dev/null)
 
 # Copy Secret Manager values into the cluster Secrets the workloads read by name
 # (scripts/render-secrets.sh). This is the interim form; M7 puts the same step in
@@ -131,22 +137,21 @@ pin-images: ## pin production to the newest published images by hand (CI does th
 # what disagrees — the same comparison the pipeline makes, run against the file rather
 # than the cluster, because the file is what decides what runs.
 #
-# The guard is not decoration: this Makefile resolves PROJECT_ID once, at parse time,
-# from `terraform output`, and that call goes through a proxy and sometimes fails to an
-# empty string. Without the guard the script's "PROJECT_ID must be set" error looks
-# exactly like the answer "newer images exist" — a failure to ask read as an answer.
+# The empty-pid branch is not decoration. My first version of this target reported
+# "newer images exist" when the project id had failed to resolve and the script had
+# merely errored — a failure to ask, printed as an answer. A question that cannot be
+# asked exits 2 and says why.
 release-check: ## is anything newer published than production names? (changes nothing)
-ifeq ($(strip $(PROJECT_ID)),)
-	@echo "cannot ask: PROJECT_ID resolved to nothing (the parse-time 'terraform -chdir=gcp output -raw project_id' failed)."
-	@echo "Re-run, or pass it explicitly: make release-check PROJECT_ID=learn-anything-510905"
-	@exit 2
-else
-	@set -eu; if $(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/pin-image.sh --dry-run; then \
+	@set -eu; pid="$$(./scripts/project-id.sh 2>/dev/null || true)"; \
+	if [ -z "$$pid" ]; then \
+	  echo "cannot ask: the project id did not resolve (PROJECT_ID unset, no project_id in gcp/terraform.tfvars, and 'terraform output' failed)."; \
+	  exit 2; \
+	fi; \
+	if $(kenv) PROJECT_ID="$$pid" ./scripts/pin-image.sh --dry-run; then \
 	  echo "nothing newer: production already names the newest published images"; \
 	else \
 	  echo ""; echo "newer images exist (listed above). Ship them with: make deliver"; exit 1; \
 	fi
-endif
 
 # The human-triggered release. It deliberately does not pin or deploy from this
 # laptop: it starts the same workflow an application repository hands off to, so there
