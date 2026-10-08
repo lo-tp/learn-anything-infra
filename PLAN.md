@@ -9,6 +9,16 @@ foundation. The *why* behind each load-bearing choice lives in
 [`docs/adr/`](./docs/adr/), not here. The words used here are defined in
 [`CONTEXT.md`](./CONTEXT.md).
 
+**How to read this, now that most of it is built.** This is a working document, not
+a status page, and that has two consequences. What production *runs* is never
+recorded here: the record is `images:` in
+`manifests/overlays/prod/kustomization.yaml`, and this file will always be stale
+about digests. And a `**Status: done…**` paragraph is a dated finding — what was
+measured, on what date, and what the system did that the design did not predict —
+kept deliberately, because those findings are why several decisions in
+[`docs/adr/`](./docs/adr/) say what they say. Read the finished milestones as
+history with its evidence attached, and M8/M9/M10 as the work still open.
+
 ## Inputs that hold this shape
 
 - **GCP, `asia-east2`.** The binding constraint is a dated one: **the $300 trial
@@ -42,9 +52,12 @@ foundation. The *why* behind each load-bearing choice lives in
   plan. The apex and `www.` have no records today; leave them that way.
 - **Terraform drives everything; `gcloud` creates nothing.** The rule, and the one
    thing it doesn't cover (the credential helper `kubectl` needs), is in
-   [`AGENTS.md`](./AGENTS.md). Two things stay outside Terraform's reach and both
-   are one-time: the free-trial signup (no API for it) and the credentials — see
-   Step 0.
+   [`AGENTS.md`](./AGENTS.md). Three things stay outside Terraform's reach: the
+   **DNS records** ([ADR 0004](./docs/adr/0004-dns-stays-at-namecheap.md)), the
+   **BigQuery billing export** (a console setting with no API, not backfilled, which
+   `make cost-report` reads), and the **free-trial signup** (no API at all). The
+   first two are declared here so their drift is checkable. They are walked in
+   Step 0 (the trial), M6 (the records) and M10 (the export).
 - **Nothing was deployed here when this plan began**; the only deployment the
   product had was the Render blueprint in the backend repo, and that is what this
   plan was leaving. It has since been deleted (M9).
@@ -856,14 +869,47 @@ nothing has restored one yet).
 **Status: one clause done, one decided, two waiting on a hand at a dashboard and
 the M8 key.**
 
-- **No data carries over (decided 2026-10-08).** The Render Postgres is left where
-  it is; the in-cluster database starts empty and is the only database the product
-  has. That is a decision, not an oversight: what is on Render is development
-  history — sessions made while building the app — and carrying it in would mean
-  shipping user-visible rows whose LLM answers came from a different model at a
-different  quality, into a product about to be judged on its output. If something
-  there is ever wanted, the dump-and-restore path exists and is the one described
-  below.
+- **No *Render* data carries over (decided 2026-10-08).** The Render Postgres is
+  left where it is. That is a decision, not an oversight: what is on Render is
+  development history — sessions made while building the app — and carrying it in
+  would mean shipping user-visible rows whose LLM answers came from a different
+  model at a different quality, into a product about to be judged on its output. The
+  in-cluster database is the only database the product has.
+- **Development data from the laptop did carry over, the same day, on request.**
+  The source was the local development database (`learn-anything-backend-db-1`, the
+  Compose Postgres of the backend repo), **not** Render's — and it is the same kind
+  of history the paragraph above argues against, so the contradiction is stated
+  rather than hidden: 23 users, 53 sessions, 36 plans, 862 slide contents, 244 probe
+  questions, 169 step materials, 152 failed slides, 1,838 stage timings — several of
+  them produced by prompts and models that no longer exist. What makes it tolerable
+  is that the copy is a *replace*, so the cluster holds exactly one set of rows, and
+  that it is reversible, so it is not a commitment.
+  - **The gate was the migration revision, not the schema text.** Both databases
+    reported `alembic_version = c3d4e5f6a7b8` and the same 11 tables. Had they
+    differed, a data copy would have been a schema edit made in `psql` — the thing
+    M5 refuses: the migrations are the source of truth, and they run through the Job.
+  - **Replace, not append.** Every id here is an integer `nextval`, and the target
+    already held rows in the same id range (the six users and one session from the
+    M6/M8 acceptance runs), so an append would have collided on primary keys. The
+    dump was `pg_dump --clean --if-exists --no-owner --no-privileges`; the load was
+    **one transaction** (`psql -1 -v ON_ERROR_STOP=1`) run inside the database pod,
+    so the app saw either the old data or the new data and never a half-state; the 8
+    foreign keys stayed enforced, which is why orphan rows are not possible; and the
+    sequences came along (`users_id_seq` at 23, above a maximum id of 23), so a later
+    insert cannot collide with a copied one.
+  - **Verified as data, then as a running application.** Row counts in the cluster
+    match the source table by table. Then `register → login → GET /auth/me` through
+    `api.lotp.xyz` returned 201, 200 and 200 with the correct user id — on the
+    *existing* connection pool, which is the point: PostgreSQL drops prepared
+    statements when the objects they reference are dropped, so a pool open across a
+    `DROP`/`CREATE` is exactly where a break would surface. It did not. The probe
+    user was deleted afterwards and the counts re-compared, so what remains is the
+    source's data and nothing added by the check.
+  - **The recovery point moved.** `learn_anything-2026-10-07T17:30:05Z.sql.gz` — the
+    archive the drill below read back — is from *before* this import, so restoring it
+    today would undo the copy. The next nightly dump is the first archive that
+    contains this state; until it exists, that is the only fact about recoverability
+    worth stating.
 - **`render.yaml` is gone** (backend `d90b13e`), and with it the "Deploy (Render)"
   section of that README, `scripts/build.sh` — whose only user was the blueprint's
   `buildCommand`, its three steps now living in the Dockerfile, the CI workflow and
@@ -986,27 +1032,36 @@ The first two are the ones already wired: `replica-floor.yaml` is where the floo
 lives, and dropping a tier to zero is an edit there, not a `kubectl scale` — hand-run
 replicas are drift and the next deploy removes them (AGENTS.md, "Deploys").
 
-## Still assumed, correct me if any of these are wrong
+## Assumptions this plan rested on, and where each stands now
 
-- Inference spend sits outside the 90-day credit and outside the $35/month
-  platform ceiling. It is still real money; M8 measures it anyway.
+Listed because an assumption that has been quietly replaced is worse than one that
+was wrong. Several below are settled; the line says how.
+
+- Inference spend sits outside the 90-day credit and outside the platform ceiling.
+  It is still real money; M8 measures it anyway. *(Held; restated by the user on
+  2026-10-08.)*
 - What happens at day 91 is "start paying": this plan therefore optimises for
   durability and a documented teardown, not for a clean `terraform destroy`.
-- No environment beyond `prod` and the scale-to-zero `staging`.
+- No environment beyond `prod` and the scale-to-zero `staging`. *(Recorded as a
+  decision: [ADR 0006](./docs/adr/0006-one-environment-until-the-second-is-priced.md).)*
 - Whether Render's database holds data worth keeping — **decided on 2026-10-08:
-  no.** No carryover; the in-cluster database is the only one (see M9).
-- Per-component cost figures in this plan are estimates I have not verified
-  against Google's pricing page: **M1 replaces them with real numbers before M2
-  starts.**
+  no.** No carryover; the in-cluster database is the only one (see M9, and
+  [ADR 0005](./docs/adr/0005-no-render-data-carries-over.md)).
+- Per-component cost figures in this plan were estimates that had not been checked
+  against Google's pricing page. *(Replaced wherever measurement was possible: the
+  option table and the floor arithmetic in M3 came from the live cluster's requests,
+  not from the pricing page. What no measurement can replace is the billed figure,
+  which is M10's job — and `make cost-report` refuses to invent one.)*
 - The GKE free-tier fee waiver is assumed to apply to a **free-trial** billing
   account. Sources disagree on whether the waiver follows the trial, and
   Autopilot clusters are always regional, so the zonal-clause wording does not
-  cover them either. Unverified; worth $2.40/day; M10 checks it rather than
-  trusting it. See the correction in ADR 0001.
-- **State location is settled:** `bootstrap/` creates the versioned state bucket
-  in `asia-east2`; `gcp/` keeps its state there with the GCS backend, which
-  locks states on its own. One local state file remains, in `bootstrap/`, and it
-  holds one disposable bucket.
+  cover them either. **Still unverified**; worth about $2.40/day, so the first cost
+  table must show a GKE row, and ADR 0001 is revisited if that row is not $0. See
+  the correction in ADR 0001.
+- **State location is settled:** `bootstrap/` creates the versioned state bucket in
+  `asia-east2`; `gcp/` keeps its state there with the GCS backend, which locks
+  states on its own. One local state file remains, in `bootstrap/`, and it holds one
+  disposable bucket. *(Applied; both roots are idempotent under `terraform apply`.)*
 - The Postgres password is generated by Terraform, so it lives in state. The state
   bucket is treated as secret material for that reason: versioning on, no public
   access, readable only by `terraform-local` and the CI identity.

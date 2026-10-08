@@ -24,3 +24,7 @@ learn-anything-510905-*.json
 
 # Written by gke-gcloud-auth-plugin in the directory kubectl ran from.
 gke_gcloud_auth_plugin_cache
+
+# Local-only operator credentials for debugging runs (never commit: a real
+# account password, while the deployed system keeps its secrets in Secret Manager).
+.local/
