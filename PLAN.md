@@ -769,14 +769,15 @@ Acceptance runs with `MOCK_LLM=1` first: tables are created at startup,
 `DATABASE_URL` is ignored, and no token is spent. That is the cheapest possible
 end-to-end test of ingress, TLS, DNS, probes and the sandbox fetch.
 
-Then flip staging to the real endpoint and **measure one complete session**:
-tokens and wall-clock per session, written down in this repo. Inference is outside
-the platform budget by your instruction; it is still inside your wallet, and
-`MAX_PROBE_QUESTIONS=10` / `MAX_MATERIAL_ATTEMPTS=3` mean one session is not one
-API call.
+Then point production at the real endpoint and **complete one session on it**:
+wall-clock per step, written down here. Inference is outside the platform budget by
+your instruction; it is still inside your wallet, and `MAX_PROBE_QUESTIONS=10` /
+`MAX_MATERIAL_ATTEMPTS=3` mean one session is not one API call. Tokens are not
+measured — see the decision recorded under Status.
 
-**Done when:** a full learning session completes in a browser at the staging
-hostname against the real LLM, and its measured token cost is recorded here.
+**Done when (amended 2026-10-08, on the two points recorded under Status):** a
+full learning session completes in a browser at `learn.lotp.xyz` against the real
+LLM, and its wall-clock is recorded here.
 
 **Status: open, and the first finding is that the cluster had no way to reach a
 model at all.** The control run (the acceptance walk against a backend still
@@ -811,19 +812,23 @@ failure a result rather than a crash).
   the cluster (now possible, via NAT) and is three Secret Manager values:
   `openai-api-key`, `openai-base-url`, `llm-model`. Render's values are not in
   `render.yaml` (`sync: false`), so the dashboard is the only place they exist.
-- **Token measurement needs instrumentation that does not exist yet.** The backend
-  constructs `ChatOpenAI` in `core/llm.py` and nothing downstream records
-  `usage_metadata`, so "tokens per session" is currently unmeasurable in the app.
-  When the endpoint is decided, the cheapest honest shape is one callback handler
-  attached where the client is built — one line at the construction site, not one
-  at each call — logging model, prompt tokens, completion tokens and duration per
-  call, and a total per session. Then "measured and written down" is a log read.
-- **Staging's half of the Done-when is the part to renegotiate.** A second
-  environment with its own public surface is a second address, a second forwarding
-  rule and four more pods at the billing floor — roughly doubling the pod line,
-  which is over the credit's ceiling. The likely amendment is: run the real-LLM
-  session on production (it is already public), and record that. Decide before
-  doing it, not by drifting.
+- **No token instrumentation, decided rather than omitted (2026-10-08).** The
+  backend constructs `ChatOpenAI` in `core/llm.py` and nothing downstream keeps
+  `usage_metadata`, so tokens-per-session is not measurable inside the app today —
+  and it will not be made measurable now. Inference is outside the platform budget
+  by your instruction, so the number would be curiosity, not a control; if it ever
+  matters, the provider's own usage dashboard says it without a line of code in the
+  product. What M8 records is wall-clock, which `scripts/acceptance.py` already
+  prints per step.
+- **No staging surface, decided (2026-10-08).** The original Done-when named a
+  staging hostname because it was written before the pod floor was known: a second
+  public environment is a second address and forwarding rule plus four more pods at
+  Autopilot's billing floor — roughly doubling the pod line, which is over the
+  credit's ceiling. So the real-LLM session runs on **production**, which is already
+  public and already the thing being cut over to. `overlays/staging/` stays
+  apply-able and deliberately not running (M6's finding), and if staging ever gets
+  a surface it will be because there is traffic to protect from a change, not
+  because a milestone asked for one.
 
 ## M9 — Cutover, then Render goes away
 
