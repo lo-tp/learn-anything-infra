@@ -1,0 +1,118 @@
+# Keep the production image pins honest: when a repository has published a newer
+# image that passed its own smoke test, open a pull request that pins it.
+#
+# The registry is the source of truth for what exists (each app repository's
+# workflow publishes only after its smoke step), and git is the record of what
+# runs — so the two are joined here, by a review, rather than by a deploy that
+# quietly follows the latest tag. What this job never does is apply anything:
+# merging the pull request is what triggers `deploy.yml`.
+#
+# One branch (`pin/images`), reused: a scheduled job that opens a new pull request
+# every six hours is a queue, and a queue of pins is a way to stop reading them.
+
+name: pin-image
+
+on:
+  # Four times a day, at a quiet minute. A pin is not urgent; what matters is that
+  # the gap between "published" and "proposed" is hours, not weeks.
+  schedule:
+    - cron: "17 3,9,15,21 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+env:
+  PROJECT_ID: learn-anything-510905
+  REGION: asia-east2
+  WIF_PROVIDER: projects/358071090957/locations/global/workloadIdentityPools/learn-anything-github/providers/lo-tp-learn-anything-infra
+  WIF_SERVICE_ACCOUNT: deploy-ci@learn-anything-510905.iam.gserviceaccount.com
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.WIF_SERVICE_ACCOUNT }}
+          access_token_lifetime: 600s
+
+      # Exit 1 means "the overlay and the registry disagree" — the normal reason to
+      # be here. Exit 0 means the pins are current and there is nothing to propose.
+      - id: plan
+        name: Compare the pins with what was published
+        run: |
+          set -euo pipefail
+          ./scripts/pin-image.sh --dry-run | tee plan.txt
+          echo "changed=0" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: A newer image exists
+        if: steps.plan.outcome == 'failure'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ./scripts/pin-image.sh > /dev/null
+          branch=pin/images
+          git config user.name "learn-anything-deploy-bot"
+          git config user.email "deploy-ci@learn-anything-510905.iam.gserviceaccount.com"
+          git checkout -B "$branch"
+          git add manifests/overlays/prod/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "the pins match the registry after all (a race with another run); nothing to propose"
+            exit 0
+          fi
+          git commit -m "pin(images): what the registries now hold as published
+
+Each digest below is the newest image its repository published under a
+\`sha-<commit>\` tag, which in those repositories means: built by CI, and its
+smoke step passed. The tag and the build date are kept in the comment beside the
+digest so a human can find the run.
+
+Merging this runs deploy.yml (migrations, then workloads, then rollout).
+Merge it in the UI: a merge performed with the job's own token does not
+re-trigger workflows, and this pipeline depends on that distinction."
+          git push --force-with-lease -u origin "$branch"
+
+          existing=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // ""')
+          {
+            echo "### Image pins"
+            echo
+            echo '```'
+            sed -n '/candidate images:/,$p' plan.txt
+            echo '```'
+            echo
+            echo "Diff of the record (this is the approval):"
+            echo
+            echo '```diff'
+            git diff HEAD~1 -- manifests/overlays/prod/kustomization.yaml
+            echo '```'
+          } > pr-body.md
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --body-file pr-body.md
+            echo "updated PR #$existing"
+          else
+            gh pr create --head "$branch" --base main \
+              --title "pin(images): what the registries now hold as published" \
+              --body-file pr-body.md
+          fi
+
+      # Not an error: the pins being current is the steady state. Say which
+      # happened, so a run that did nothing is distinguishable from one that
+      # failed to decide.
+      - name: Result
+        if: always()
+        run: |
+          if [ "${{ steps.plan.outcome }}" = "success" ]; then
+            echo "no pin change: production already names the newest published images"
+          else
+            echo "a pull request now proposes the pin change; nothing was applied"
+          fi

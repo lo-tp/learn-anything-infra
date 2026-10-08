@@ -80,21 +80,39 @@ PROJECT_ID := $(shell $(AUTH) $(GCP_ENV) terraform -chdir=gcp output -raw projec
 secrets: ## render Secret objects from Secret Manager (SECRETS=… to target, CHECK_ONLY=1 to validate)
 	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/render-secrets.sh $(NS) $(SECRETS)
 
+# The public surface, not the deploy: four things have to agree for a hostname to
+# answer — the host list Terraform declares, the Ingress and certificate the
+# cluster is running, the records at the registrar (typed by hand — ADR 0004), and
+# the certificate Google issued. Any one of them being behind the others looks
+# like a broken deploy from a browser, so this asks each one out loud.
+# Read-only; exits non-zero on any disagreement.
+dns-check: ## is the public surface the one this repo says it is?
+	$(kenv) NAMESPACE=$(NS) ./scripts/dns-check.sh
+
 # The M5 order: migration Job first, then the workloads, then the rollout. It reads
 # the image out of the overlay rather than from the command line, so what gets
 # migrated and what gets deployed cannot disagree. `make deploy ENV=staging` for
 # the other one; staging's database is asleep, so it needs SKIP_MIGRATE=1 or a
 # woken database.
-# Four things have to agree for a public surface to answer: the host list
-# Terraform declares, the Ingress and certificate the cluster is running, the
-# records at the registrar (typed by hand — ADR 0004), and the certificate Google
-# issued. Any one of them being behind the others looks like a broken deploy from
-# a browser, so this asks each one out loud. Read-only; exits non-zero on any
-# disagreement.
-dns-check: ## is the public surface the one this repo says it is?
-	$(kenv) NAMESPACE=$(NS) ./scripts/dns-check.sh
-
 deploy: ## the M5 order: migrate, apply, wait (ENV=prod|staging)
 	$(kenv) NAMESPACE=$(NS) ./scripts/deploy.sh $(ENV)
 
-.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck
+# M7's two checks, both read-only. `secrets-check` compares the names
+# render-secrets.sh maps against the names gcp/app_secrets.tf creates — the two
+# lists live in one repository and can still disagree silently. `secret-hygiene`
+# proves no secret value appears in any of the four repositories or inside a
+# running image, and that JWT_SECRET and SANDBOX_SERVICE_TOKEN are one value each
+# across the pods that read them. Neither prints a value; both compare hashes.
+secrets-check: ## do the Terraform secret names and the renderer's mapping agree?
+	$(AUTH) $(GCP_ENV) ./scripts/check-secret-names.sh
+
+secret-hygiene: ## no secret in a repo or an image, and the shared pairs match
+	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/secret-hygiene.sh $(NS)
+
+# What the registry now holds as published, written into the production overlay.
+# Same script the scheduled pin-image workflow runs; committing the result is
+# still a human act, which is why this does not commit for you.
+pin-images: ## re-pin production to the newest smoke-passed images (review the diff)
+	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/pin-image.sh
+
+.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images

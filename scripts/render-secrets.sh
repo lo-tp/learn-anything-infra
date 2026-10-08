@@ -7,11 +7,14 @@
 # workloads read cluster Secrets by stable name (`database-env`, `backend-env`,
 # `sandbox-env`); this script is the bridge between the two, run at deploy time.
 #
-# It is deliberately boring and deliberately temporary. PLAN.md M7 replaces it with
-# a pipeline step that does the same copy from the Terraform outputs instead of
-# from this table, at which point the table below is deleted rather than grown.
-# What M4 needs is a database password that exists, and one place where the
-# cluster learns it.
+# It is deliberately boring. What M7 changed is not this table but who runs it and
+# how often: it is now a step in `.github/workflows/deploy.yml`, running as the
+# pipeline's own keyless identity (see scripts/ci-kubeconfig.sh), so a deploy from
+# CI and a deploy from a laptop are the same order of operations. The table below
+# stays, because it is the mapping from Secret Manager entries to the environment
+# variable names the apps compile against — Terraform owns which entries *exist*
+# (`gcp/app_secrets.tf` records why the names match), not what the cluster calls
+# them. Keeping the two lists in step is `make secrets-check`'s job.
 #
 # Usage:
 #   scripts/render-secrets.sh <namespace> [target ...]     # e.g. database-env
@@ -47,8 +50,21 @@ declare -A TARGETS=(
   # the same JWT signing key the backend issues it with, which is why it is the same
   # Secret Manager entry and not a second one. Its NEXT_PUBLIC_* values are build
   # arguments baked into the image, so they are deliberately absent here.
+  # The frontend needs exactly one secret: proxy.ts verifies the sign-in cookie with
+  # the same JWT signing key the backend issues it with, which is why it is the same
+  # Secret Manager entry and not a second one. Its NEXT_PUBLIC_* values are build
+  # arguments baked into the image, so they are deliberately absent here.
   [frontend-env]="JWT_SECRET=jwt-secret"
 )
+
+# Pairs that are skipped when their entry is still empty, instead of failing the
+# render. `openai-base-url` and `llm-model` are declared by Terraform now and
+# filled at M8, when the real LLM is switched on; a deploy before then should not
+# invent an empty `OPENAI_BASE_URL=`, because the backend reads an empty string as
+# "use the configured value" and passes it to the client, which is a worse failure
+# than the variable being unset.
+OPTIONAL_TARGETS=(backend-env)
+OPTIONAL_pairs="OPENAI_BASE_URL=openai-base-url LLM_MODEL=llm-model"
 
 # The backend wants one URL, `DATABASE_URL`, and names no driver in it: the app
 # rewrites a driver-less `postgresql://` URL to psycopg3 itself
@@ -64,6 +80,7 @@ declare -A TARGETS=(
 DB_USER=learn
 DB_NAME=learn_anything
 DB_HOST=learn-anything-db
+DB_PASSWORD_SECRET=db-password
 
 namespace="${1:-}"; shift || true
 [ -n "$namespace" ] || usage
@@ -86,10 +103,20 @@ for target in "${targets[@]}"; do
   [ -n "$mapping" ] || { echo "unknown target: $target" >&2; usage; }
 
   literal_args=()
-  for pair in $mapping; do
+  pairs_for_target="$mapping"
+  for t in "${OPTIONAL_TARGETS[@]}"; do
+    [ "$t" = "$target" ] && pairs_for_target="$mapping $OPTIONAL_pairs"
+  done
+  for pair in $pairs_for_target; do
     key="${pair%%=*}"; secret="${pair#*=}"
-    value="$(read_secret "$secret")"
+    # `|| true` because a Secret Manager entry with an empty payload makes gcloud
+    # exit non-zero, and `set -e` would end the script before the branch below can
+    # say which kind of empty this is.
+    value="$(read_secret "$secret" || true)"
     if [ -z "$value" ]; then
+      case " $OPTIONAL_pairs " in
+        *" $pair "*) echo "note: skipping $key — Secret Manager entry '$secret' is empty (supplied at M8)" >&2; continue ;;
+      esac
       echo "refusing to render $target: Secret Manager entry '$secret' is empty" >&2
       exit 1
     fi
@@ -102,7 +129,7 @@ for target in "${targets[@]}"; do
   done
 
   if [ "$target" = "backend-env" ]; then
-    password="$(read_secret db-password)"
+    password="$(read_secret "$DB_PASSWORD_SECRET" || true)"
     literal_args+=("--from-literal=DATABASE_URL=postgresql://${DB_USER}:${password}@${DB_HOST}:5432/${DB_NAME}")
   fi
 
