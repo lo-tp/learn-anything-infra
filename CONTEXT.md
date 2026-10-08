@@ -64,6 +64,16 @@ as a step, not a manual check someone performs afterwards: a build that succeeds
 proves the compiler ran, not that the image can serve anything.
 _Avoid_: health check (that is the Kubernetes probe), sanity check, e2e.
 
+**Pin** (noun and verb):
+The exact image an environment runs — a digest, written in that overlay's `images:`
+block, named as the base names it. The tag and build date live in the comment
+beside it, because a bare digest is a fact no human can look up. The pin block is
+the record of what production runs, and `git diff` of it is the approval. A pin is
+something only an apply can change, which is why a pipeline proposes one as a pull
+request instead of moving a tag.
+_Avoid_: latest, version (a version is what the app reports; a pin is what the
+cluster runs), tag (a tag can move under a deploy; a pin cannot).
+
 **Replica floor**:
 The minimum number of replicas a tier is pinned to in a given environment. It is a
 deployment decision, and it is the unit in which Autopilot cost is paid — so

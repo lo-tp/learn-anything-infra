@@ -317,8 +317,11 @@ KEDA is not installed and is no longer the plan for these tiers; see the option
 table and ADR 0001's amendment for why. M6's ingress and hostnames are done. The
 HPA placeholders are gone from both: a `minReplicas: 1` HorizontalPodAutoscaler
 forbids the zero that ADR 0001's design requires, and KEDA expects to own that
-range. What is still missing for this gate is the same named list: those
-ScaledObjects, and a real `OPENAI_API_KEY` (a placeholder until M8). Staging is
+range. Under option (D) there is nothing left to install for this gate: the tiers
+run at one replica and the wake-up question is closed until a bill or a load reopens
+it (M10, and the note above about deciding again rather than silently). What remains
+before a real session works is a named value, not a named object: a real
+`OPENAI_API_KEY` (a placeholder until M8). Staging is
 apply-able and deliberately not runnable: no images built with staging origins, no
 hostnames — which is what `overlays/staging/asleep.yaml` states rather than hides.
 
@@ -687,11 +690,23 @@ shared pairs match across services (an `MISMATCH` here shows up as 401s from
   → fail if `kubectl diff` against the rendered overlay is not empty. No secret is
   stored in GitHub; there is no sync controller; the reconcile happens at deploy
   time, by whoever deploys.
+  The first green run (54s, on the push that added it) says the parts in its own
+  log: `control plane reachable as deploy-ci@learn-anything-510905…`, four Secrets
+  `unchanged` with the M8 entries named as skipped, `migration Job
+  migrate-4cf283528e5f-4428bd already completed; not re-running it`, three
+  deployments `unchanged`, then `no drift` and the three digests it is serving.
+  An apply that changed nothing, performed by a pipeline: the right outcome for a
+  push that changed no manifest.
 - `.github/workflows/pin-image.yml` closes the loop M6 left open: the registry is
   asked what it holds (newest `sha-<commit>` version, which in those repositories
   means built by CI **and smoke-passed**, because publish runs after the smoke
   step), and a newer one becomes a pull request on one reused branch. It applies
-  nothing. Merging, in the UI, is what deploys.
+  nothing. Merging, in the UI, is what deploys. Its steady-state path is the one
+  that has run: authenticate, compare, find the pins current, say so, open nothing.
+  **The pull-request path is unexercised** — it needs a newer published image, and
+  inventing one to test it would have been a fake pin in the registry. It gets
+  tested by the first real one, and the failure mode if it is broken is visible:
+  the job says which branch it took.
 - Both halves of the Done-when are now commands. `make secrets-check` compares the
   renderer's mapping against `terraform output secret_names` — 6/6 agree. Live
   output of `make secret-hygiene`: every Secret Manager entry absent from all four
