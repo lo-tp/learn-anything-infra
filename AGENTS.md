@@ -90,11 +90,16 @@ for changes that cannot touch the schema.
   `kubectl kustomize manifests/overlays/prod` should be empty. A non-empty diff is
   an unapplied change or something edited in the cluster; both are worth knowing
   before the next deploy, and CI fails on it.
-- **CI applies the manifests; the merge is the authority.** A pin PR changes the
-  `images:` block, and merging it triggers the deploy. Secrets are rendered from
-  Secret Manager at deploy time — no secret value is ever in this repo, and
-  `make secrets` says out loud when an entry still holds a placeholder
-  (`make secret-hygiene` proves the rest).
+- **CI applies the manifests; the merge into `release` is the authority.** Merging
+  `main` into an app repository's `release` branch is the act that ships: `deliver.yml`
+  pins the published digest as a commit and dispatches `deploy.yml` (ADR 0007). No
+  image is ever passed on a command line. Secrets are rendered from Secret Manager at
+  deploy time — no secret value is ever in this repo, and `make secrets` says out
+  loud when an entry still holds a placeholder (`make secret-hygiene` proves the
+  rest).
+- **Rollback is `git revert` of the pin commit, pushed** — the deploy runs again
+  against the previous digests. Migrations are forward-only, so a rollback that
+  crosses a migration is a fix-forward, not a revert.
 - **Image contracts are enforced by the cluster, not by review**: a numeric `USER`
   (`runAsNonRoot` is verified numerically), linux/amd64, and a dependency-free
   readiness route. A Dockerfile that ignores them fails at pod start.
@@ -121,10 +126,11 @@ paths belong to a machine, so they are not written here: on this machine they ar
   implement the contract yet.
 - Service discovery, ports and environment-variable names are owned here; an app's
   image is built in its own repo. This repo consumes digests.
-- **Only the `release` branch of an app repository publishes an image.** `main` is
-  checked (lint, typecheck, unit tests) and never builds one; promoting code means
-  merging `main` into `release`, which is protected and merge-only so the commit a
-  pin comment names stays reachable on `main`.
+- **Only the `release` branch of an app repository publishes an image, and the
+  merge into it is what ships one.** `main` is checked (lint, typecheck, unit tests)
+  and never builds; `release` is protected and merge-only, so the commit a pin
+  comment names stays reachable on `main`. Pushing there delivers end to end — build,
+  smoke test, publish, pin, deploy ([ADR 0007](./docs/adr/0007-the-merge-into-release-is-the-approval.md)).
 
 ## On a machine that has never run this
 

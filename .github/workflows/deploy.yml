@@ -4,6 +4,11 @@
 # laptop — which is what M7 asked for ("no always-on sync controller": the
 # reconcile happens at deploy time, by whoever or whatever deploys).
 #
+# Two things start this workflow, and neither is a special case: a human pushing to
+# `main` (a manifest edit, a reverted pin), and `deliver.yml` after it pins an image
+# that a `release` branch published — dispatched explicitly, because a push made with
+# `GITHUB_TOKEN` starts no workflows. One path to production, not two.
+#
 # The laptop path (`make deploy`) still exists and does the identical thing; the
 # two differ only in identity — a human through the gcloud configuration, this job
 # through application default credentials (scripts/ci-kubeconfig.sh).
@@ -111,3 +116,28 @@ jobs:
           kubectl get deploy -n "$ns" \
             -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,IMAGE:.spec.template.spec.containers[0].image \
             --no-headers | sed 's/asia-east2-docker.pkg.dev[^ ]*\///'
+
+      # Converged is not the same as serving. The cluster can match the manifests
+      # exactly while the public surface is down — a DNS record that points at an
+      # old address, a certificate that does not cover a name, a workload that is
+      # Ready to the cluster but not to the load balancer. So the last step of a
+      # deploy looks at the thing a user uses, from outside the cluster.
+      - name: The public surface answers
+        run: |
+          set -euo pipefail
+          # Two surfaces are asserted exactly: the frontend answers a real page, the
+          # API a dependency-free route. `-L` because a redirect that ends in a page
+          # is the app working, not failing.
+          for target in "https://learn.lotp.xyz/en/login" "https://api.lotp.xyz/health"; do
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' --max-time 30 "$target") \
+              || { echo "::error::$target did not answer at all"; exit 1; }
+            echo "$target -> $code"
+            [ "$code" = "200" ] || { echo "::error::expected 200 from $target, got $code"; exit 1; }
+          done
+          # The sandbox routes only /slides, so an unknown deck path is not
+          # necessarily a 200. What matters is that it is not the server failing:
+          # 4xx is the app answering, 5xx is the app broken.
+          code=$(curl -sSL -o /dev/null -w '%{http_code}' --max-time 30 "https://sandbox.lotp.xyz/slides/healthcheck") \
+            || { echo "::error::sandbox.lotp.xyz did not answer at all"; exit 1; }
+          echo "sandbox.lotp.xyz/slides/healthcheck -> $code"
+          case "$code" in 5*) echo "::error::the sandbox returned $code"; exit 1 ;; esac

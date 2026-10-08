@@ -122,7 +122,7 @@ secret-hygiene: ## no secret in a repo or an image, and the shared pairs match
 # What the registry now holds as published, written into the production overlay.
 # Same script the scheduled pin-image workflow runs; committing the result is
 # still a human act, which is why this does not commit for you.
-pin-images: ## re-pin production to the newest smoke-passed images (review the diff)
+pin-images: ## pin production to the newest published images by hand (CI does this on release)
 	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/pin-image.sh
 
 # M8's acceptance walk: one complete session through the public surface, printed as

@@ -61,18 +61,23 @@ discipline:
    The workflow then publishes to Artifact Registry only *after* the image answered a
    real request — `/health`, the auth redirect to `/en/login`, `/api/compile`. An
    image that never served a request never gets a tag.
-2. **Pin it here, by digest.** `pin-image.yml` opens a pull request against one
-   reused branch; `images:` in `manifests/overlays/prod/kustomization.yaml` is the
-   record of what production runs, and **`git diff` of that block is the
-   approval**. Nothing is ever passed on a command line, which is why the Job that
-   migrates and the Deployment that serves cannot drift apart.
+2. **Merge `main` into `release`; the rest is carried.** `deliver.yml` pins the
+   digest into `manifests/overlays/prod/kustomization.yaml` as a commit that names
+   the run which built it, then dispatches the deploy. That `images:` block is still
+   the record of what production runs — **the approval is the merge**, and the pin
+   commit is the audit. Nothing is ever passed on a command line, which is why the
+   Job that migrates and the Deployment that serves cannot drift apart.
 3. **CI deploys: migrations first.** `scripts/deploy.sh` runs the migration Job,
    and a failure stops there with the Job's log printed and nothing else touched —
    what was serving keeps serving. Then apply, then rollout.
 4. **Convergence is checked, not assumed.** The workflow fails if `kubectl diff`
    against the rendered overlay is not empty. A non-empty diff means either an
    unapplied change or something edited in the cluster; both are facts worth having
-   before the next deploy.
+   before the next deploy. Then it curls the public surfaces from outside the
+   cluster: converged is not the same as serving.
+5. **Rollback is a git act.** `git revert` the pin commit and push it, and the
+   deploy runs again against the previous digests — which is why the pin is a commit
+   and not a dashboard setting ([ADR 0007](./docs/adr/0007-the-merge-into-release-is-the-approval.md)).
 
 ## The commands worth knowing
 

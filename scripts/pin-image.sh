@@ -11,9 +11,9 @@
 # keeping the tag in the comment beside it, because a bare digest is a fact no human
 # can look up.
 #
-# What it does not do: decide that a change is good. It writes a file. The pull
-# request is what a human reads and merging is what deploys —
-# .github/workflows/pin-image.yml runs this, .github/workflows/deploy.yml applies.
+# What it does not do: decide that a change is good. It writes a file.
+# .github/workflows/deliver.yml runs this, commits what it wrote as the record, and
+# dispatches .github/workflows/deploy.yml, which applies it.
 #
 # --dry-run prints what would change and exits 1 if anything differs (0 when the
 # overlay is already current), so a scheduled job knows whether to open a PR.

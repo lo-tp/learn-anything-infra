@@ -1,0 +1,153 @@
+# Deliver what a `release` branch published: pin the digest here, then deploy it.
+#
+# This is the other half of the promotion act. In each application repository,
+# `main` is checked and never publishes; merging `main` into `release` is what
+# builds an image, and that workflow publishes only after its own smoke step passed.
+# So by the time this job starts, the thing worth shipping has already been built,
+# run, and answered a request — and the human decision ("this goes live") was the
+# merge. What remains is carrying, not deciding: this job writes the digest into
+# `manifests/overlays/prod/kustomization.yaml`, commits it as the record, and
+# dispatches `deploy.yml`, which is the same path a human triggers with
+# `make deploy`: migrations, then workloads, then rollout, then the drift check.
+#
+# Why it dispatches the deploy instead of relying on the push: a push made with
+# `GITHUB_TOKEN` does not start workflows, so the pin commit would sit there
+# looking deployed. `gh workflow run` makes the hand-off explicit, and it runs the
+# same `deploy.yml` — there is one path to production, not two.
+#
+# What the pull request used to be: a human gate between "published" and "shipped",
+# with the diff of the `images:` block as the approval. That gate has moved upstream
+# to the merge into `release`; the diff of *this* commit is still the record, it is
+# simply read after the fact. If the result is wrong, the revert is a commit:
+# `git revert` the pin and push it, and `deploy.yml` runs again against the previous
+# digests. (`docs/adr/0007`.)
+#
+# The schedule is not the trigger any more; it is the safety net. Events can be
+# missed — a runner dies, a workflow is renamed — and convergence shouldn't depend
+# on not missing anything, so twice-a-day reconciliation still runs, and this job is
+# idempotent: if production already names the newest published images, it says so and
+# changes nothing.
+
+name: deliver
+
+on:
+  # The fast path: an application repository's image workflow finished on `release`.
+  # `workflow_run` matches by workflow *name*, and `build image` is the name the
+  # three application repositories use — the branch filter is `release`, the only
+  # branch that publishes. A failed build never reaches this job.
+  workflow_run:
+    workflows: ["build image"]
+    branches: [release]
+    types: [completed]
+  # The safety net, at a quiet minute. Same job, same effect.
+  schedule:
+    - cron: "17 3,9,15,21 * * *"
+  workflow_dispatch: {}
+
+# One delivery at a time. Two of these racing would mean two commits touching the
+# same `images:` block and two deploys racing on the same migration Job.
+concurrency:
+  group: deliver-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: write # the pin commit
+  actions: write # the workflow_dispatch that starts deploy.yml
+  id-token: write # the OIDC token the workload identity provider trusts
+
+env:
+  PROJECT_ID: learn-anything-510905
+  REGION: asia-east2
+  WIF_PROVIDER: projects/358071090957/locations/global/workloadIdentityPools/learn-anything-github/providers/lo-tp-learn-anything-infra
+  WIF_SERVICE_ACCOUNT: deploy-ci@learn-anything-510905.iam.gserviceaccount.com
+
+jobs:
+  deliver:
+    # Only deliver what built. A red build means a red smoke test: no new image
+    # exists, so there is nothing to pin.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      # For a `workflow_run` event this checks out this repository's default branch,
+      # which is exactly the base the pin commit should sit on. The branch the
+      # *image* was built from is not needed here: the registry is what says what
+      # exists, and `sha-<commit>` names are resolved by `scripts/pin-image.sh`.
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.WIF_SERVICE_ACCOUNT }}
+          access_token_lifetime: 600s
+
+      # Exit 1 means "the overlay and the registry disagree" — the reason to be
+      # here. Exit 0 means production already names the newest published images.
+      - id: plan
+        name: Compare the pins with what was published
+        run: |
+          set -euo pipefail
+          ./scripts/pin-image.sh --dry-run | tee plan.txt
+        continue-on-error: true
+
+      - name: Pin the published images and deploy them
+        if: steps.plan.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_RUN: ${{ github.event.workflow_run.html_url }}
+          SOURCE_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          ./scripts/pin-image.sh > /dev/null
+          git config user.name "learn-anything-deploy-bot"
+          git config user.email "deploy-ci@learn-anything-510905.iam.gserviceaccount.com"
+
+          git add manifests/overlays/prod/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "the pins match the registry after all (a race with another run); nothing to deliver"
+            exit 0
+          fi
+
+          # Three -m flags, not one multi-line string, and `printf` rather than a
+          # literal newline inside the string: a YAML block scalar ends at the first
+          # line that is less indented than the block, so a blank line followed by
+          # text at column 1 would end this step's script mid-sentence.
+          note=""
+          if [ -n "${SOURCE_RUN:-}" ]; then
+            note=$(printf '\n\nTriggered by: %s (%s, branch %s)' "$SOURCE_RUN" "$SOURCE_REPO" "$SOURCE_BRANCH")
+          fi
+          git commit -m "pin(images): deliver what release published" \
+            -m "Each digest is the newest image its repository published under a sha-<commit> tag, which in those repositories means: lint/typecheck/unit tests passed on main, the branch was merged into release, the image was built, and its smoke step passed. The tag and build date are in the comment beside the digest so a human can find the run." \
+            -m "The approval is the merge into release; this commit is the record. Reverting it and pushing is the rollback: deploy.yml runs again against the previous digests.$note"
+
+          # A rejected push means main moved while this job ran (a human pushed).
+          # Rebase and try once: the file being written is derived from the
+          # registry, so a replay is the same decision, not a merge conflict.
+          if ! git push origin "HEAD:main"; then
+            echo "main moved under this job; rebasing and re-pushing"
+            git fetch -q origin main
+            git rebase origin/main
+            git push origin "HEAD:main"
+          fi
+
+          # The push itself starts nothing: a GITHUB_TOKEN push does not trigger
+          # workflows. So name the hand-off instead of hoping for a webhook.
+          gh workflow run deploy.yml --ref main
+          echo "deploy.yml dispatched against main (including this pin commit)"
+
+      # A run that did nothing must be distinguishable from one that failed to
+      # decide, and a run that delivered must say where to watch the deploy.
+      - name: Result
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          case "${{ steps.plan.outcome }}" in
+            success) echo "no pin change: production already names the newest published images" ;;
+            failure)
+              echo "pinned and dispatched; the deploy is here:"
+              gh run list --workflow=deploy.yml --limit 1 --json url,status -q '.[0] | "\(.url) (\(.status))"'
+              ;;
+            *) echo "this job did not run (the triggering build was not successful, or it was skipped)" ;;
+          esac

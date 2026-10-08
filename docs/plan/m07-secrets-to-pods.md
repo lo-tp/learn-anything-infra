@@ -38,6 +38,12 @@ shared pairs match across services (an `MISMATCH` here shows up as 401s from
   inventing one to test it would have been a fake pin in the registry. It gets
   tested by the first real one, and the failure mode if it is broken is visible:
   the job says which branch it took.
+  *(Superseded the same day: the pin pull request was removed, and a merge into an
+  app repository's `release` branch now delivers end to end through
+  `.github/workflows/deliver.yml` — ADR 0007. What did not change: the registry is
+  asked what it holds, this script applies nothing, and the record of what production
+  runs is a diff of the `images:` block. The unexercised PR path was exercised later
+  that day, as a pin commit, and then deleted.)*
 - Both halves of the Done-when are now commands. `make secrets-check` compares the
   renderer's mapping against `terraform output secret_names` — 6/6 agree. Live
   output of `make secret-hygiene`: every Secret Manager entry absent from all four
