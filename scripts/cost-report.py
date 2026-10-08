@@ -22,20 +22,70 @@ a one-time human act (Billing → Budgets & costs → Billing export → BigQuer
 usage export), like the DNS records, and this repo declares it instead of
 performing it.
 
+It reads a **human** gcloud access token (`gcloud auth print-access-token`), like
+every other cost/cluster reading target; Terraform's service-account key is not
+used here. `make cost-report` runs it with the bundled SDK on PATH; running the
+file directly needs that PATH too, or `GCLOUD=` pointing at a gcloud binary.
+
 Usage: scripts/cost-report.py [--project P] [--days N] [--dataset D] [--sku-grep S]
 """
 
 from __future__ import annotations
-import argparse, datetime, json, os, subprocess, sys, urllib.error, urllib.request
+import argparse, datetime, json, os, shutil, subprocess, sys, urllib.error, urllib.request
 
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLOUDSDK = os.environ.get("CLOUDSDK_CORE_PROJECT") or "learn-anything-510905"
 GKE_SERVICE = "services/6F81-A0F9-337E"  # Kubernetes Engine, from the Billing Catalog API
 
 
+def gcloud_bin() -> str:
+    """Find gcloud. The SDK ships in this working tree (AGENTS.md, 'Cluster
+    access'), so a direct `python3 scripts/cost-report.py` need not die on a
+    bare-name lookup: the last candidate is that documented path. An explicit
+    `GCLOUD=` is an assertion, not a hint — if it names nothing executable, say
+    so instead of quietly using a different binary.
+    """
+    explicit = os.environ.get("GCLOUD")
+    if explicit:
+        if os.access(explicit, os.X_OK):
+            return explicit
+        sys.exit(f"GCLOUD={explicit} is not an executable file.")
+    found = shutil.which("gcloud")
+    if found:
+        return found
+    bundled = os.path.join(REPO, "google-cloud-sdk", "bin", "gcloud")
+    if os.access(bundled, os.X_OK):
+        return bundled
+    sys.exit(
+        "gcloud not found.\n  use `make cost-report` (it puts the bundled SDK on PATH), or\n"
+        "  export GCLOUD=/path/to/gcloud, or install the Google Cloud SDK."
+    )
+
+
 def token() -> str:
-    out = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True, timeout=120)
+    out = subprocess.run([gcloud_bin(), "auth", "print-access-token"], capture_output=True, text=True, timeout=120)
     if out.returncode != 0:
-        sys.exit(f"no gcloud credential: {out.stderr.strip()[:200]}")
+        detail = (out.stderr.strip() + "\n" + out.stdout.strip()).strip()[:400]
+        print(f"{gcloud_bin()} auth print-access-token failed:\n  {detail}")
+        low = detail.lower()
+        if "credential" in low or "not signed in" in low or "unauthorized" in low:
+            print(
+                "  sign in with `gcloud auth login` — not `gcloud auth application-default login`,\n"
+                "  which would repoint Terraform at this human identity (AGENTS.md, 'Cluster access')."
+            )
+        else:
+            print("  this is gcloud itself failing, not an absent credential: fix what it reports above.")
+        sys.exit(2)
+    if not out.stdout.strip():
+        # Exit 0 and no token: gcloud can print a warning to stdout and still give
+        # us nothing. Sending `Bearer ` to BigQuery answers 401 with a JSON blob,
+        # which reads like a permissions problem rather than an absent credential.
+        print("gcloud answered but returned no access token.")
+        print(
+            "  sign in with `gcloud auth login` — not `gcloud auth application-default login`,\n"
+            "  which would repoint Terraform at this human identity (AGENTS.md, 'Cluster access')."
+        )
+        sys.exit(2)
     return out.stdout.strip()
 
 
@@ -50,6 +100,14 @@ def api(method: str, url: str, tok: str, payload: dict | None = None):
             return json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
         sys.exit(f"{method} {url}\n  HTTP {e.code}: {e.read().decode('utf-8','replace')[:300]}")
+    except urllib.error.URLError as e:
+        # The signature of this network, not a bug in this script: some Google
+        # endpoints black-hole rather than refuse (AGENTS.md, "Network").
+        sys.exit(
+            f"{method} {url}\n  {e.reason} — this endpoint did not answer, which on this machine\n"
+            "  usually means the request did not go through the local proxy. Use `make cost-report`,\n"
+            "  or export HTTPS_PROXY/HTTP_PROXY as its output shows."
+        )
 
 
 def find_dataset(tok: str, project: str, explicit: str | None) -> tuple[str, str]:

@@ -52,7 +52,11 @@ tf-bootstrap: ## init, apply and print outputs for the bootstrap/ root
 # leaking into the other's work.
 SDK        = $(CURDIR)/google-cloud-sdk/bin
 KUBECONFIG ?= $(CURDIR)/.kubeconfig-gke
-kenv = PATH="$(SDK):$(PATH)" KUBECONFIG=$(KUBECONFIG) $(GCP_ENV)
+# Anything that shells out to gcloud needs the bundled SDK on PATH; anything that
+# talks to the cluster additionally needs the generated kubeconfig. Split so a
+# gcloud-only target does not pretend to be a kubectl one.
+gcloudenv = PATH="$(SDK):$(PATH)" $(GCP_ENV)
+kenv = $(gcloudenv) KUBECONFIG=$(KUBECONFIG)
 
 kcreds: ## point .kubeconfig-gke at the cluster, as the human identity
 	$(kenv) gcloud container clusters get-credentials learn-anything --region=asia-east2
@@ -144,7 +148,9 @@ restore-drill: ## pg_restore the newest archive into a scratch database and comp
 # which is a one-time console act and is not backfilled — the script says so and
 # exits 2 rather than pretending. Credits are reported separately from cost on
 # purpose: the trial credit makes the invoice small, not the platform cheap.
+# Reads a gcloud access token, so it runs as the human identity like the other
+# human targets — not as terraform-local.
 cost-report: ## what the platform actually costs, by service and SKU
-	$(GCP_ENV) python3 scripts/cost-report.py $(ARGS)
+	$(gcloudenv) python3 scripts/cost-report.py $(ARGS)
 
 .PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images acceptance mock-on mock-off restore-drill cost-report
