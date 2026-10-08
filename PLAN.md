@@ -778,6 +778,53 @@ API call.
 **Done when:** a full learning session completes in a browser at the staging
 hostname against the real LLM, and its measured token cost is recorded here.
 
+**Status: open, and the first finding is that the cluster had no way to reach a
+model at all.** The control run (the acceptance walk against a backend still
+holding a placeholder key) is what showed it, and the acceptance driver that ran it
+is now `scripts/acceptance.py` (`--allow-fail` makes the expected real-mode
+failure a result rather than a crash).
+
+- **No egress, and it looked like the familiar problem.** From a pod:
+  `api.openai.com` never completed a TCP connection (timeout at 20 s),
+  `storage.googleapis.com` answered in 0.1 s, and `example.com`, `github.com`,
+  `ipinfo.io` all timed out. The cause is this repository's own shape —
+  `enable_private_nodes = true` with no Cloud NAT in the VPC — not the
+  mainland-China black-holing AGENTS.md documents. A cloud service that is not
+  Google's was unreachable, which the LLM plan quietly assumed away.
+  Fixed as code: a Cloud Router and a Cloud NAT gateway over all subnetwork ranges
+  (`AUTO_ONLY`, `min_ports_per_vm = 4`). Its price is not asserted here; the
+  pricing page is linked in `gcp/network.tf` and M10 reads the line from the bill.
+- **The balancer's 30-second backend timeout is a functional limit, not a tuning
+  knob.** A still-running request came back as Google's HTML 502 at 30.8 s while
+  the pod kept working. `manifests/base/backend-config.yaml` now carries one
+  field — `timeoutSec: 120` — attached to the backend Service by annotation. (The
+  health-check `BackendConfig`s M6 deleted stay deleted: that field is ignored here,
+  this one is the documented mechanism for timeouts.)
+- **Two contract facts the walk taught, both now written into the script rather
+  than remembered:** the cookie is set by `/auth/login`, not by
+  `/auth/register` (the frontend makes both calls); and pydantic's email validator
+  rejects a `.invalid` address, so the throwaway learner uses `example.com`.
+- **What M8 still needs from you, and it cannot be derived from this repo: which
+  endpoint.** The backend's local `.env` points at `http://192.168.200.54:1919/v1`
+  with model `qwen3.8-flash-next-iq3_xxs` — a machine on your LAN, unreachable
+  from a VPC in `asia-east2`. Whatever production uses has to be reachable from
+  the cluster (now possible, via NAT) and is three Secret Manager values:
+  `openai-api-key`, `openai-base-url`, `llm-model`. Render's values are not in
+  `render.yaml` (`sync: false`), so the dashboard is the only place they exist.
+- **Token measurement needs instrumentation that does not exist yet.** The backend
+  constructs `ChatOpenAI` in `core/llm.py` and nothing downstream records
+  `usage_metadata`, so "tokens per session" is currently unmeasurable in the app.
+  When the endpoint is decided, the cheapest honest shape is one callback handler
+  attached where the client is built — one line at the construction site, not one
+  at each call — logging model, prompt tokens, completion tokens and duration per
+  call, and a total per session. Then "measured and written down" is a log read.
+- **Staging's half of the Done-when is the part to renegotiate.** A second
+  environment with its own public surface is a second address, a second forwarding
+  rule and four more pods at the billing floor — roughly doubling the pod line,
+  which is over the credit's ceiling. The likely amendment is: run the real-LLM
+  session on production (it is already public), and record that. Decide before
+  doing it, not by drifting.
+
 ## M9 — Cutover, then Render goes away
 
 Decide first whether the Render Postgres data carries over: if it does, `pg_dump`

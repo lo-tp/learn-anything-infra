@@ -92,6 +92,17 @@ local dev servers (backend `8001`, sandbox `3001`) go through the proxy and fail
 settings, set in Docker Desktop, not in this shell. CI in GitHub Actions needs
 none of this — it runs from GitHub's network.
 
+The cluster has its own version of the same trap, and it looks identical: with
+`enable_private_nodes`, pods have **no internet egress unless the VPC has a Cloud
+NAT gateway**, and the symptom is a timeout to any non-Google host — from inside a
+pod, `api.openai.com` never completes a TCP connection while
+`storage.googleapis.com` answers in a tenth of a second. M8 found it by measuring
+from a pod instead of reasoning from the laptop. `gcp/network.tf` carries the
+router and the NAT; if a workload ever needs an external API, that is the first
+line to check, and the second is the load balancer's request timeout
+(`manifests/base/backend-config.yaml`, 120 s), which turns a slow upstream into a
+Google-authored 502 at 30 s.
+
 ## Container images: podman, not Docker
 
 Images on this machine are built and run with **podman**. Do not reach for `docker`

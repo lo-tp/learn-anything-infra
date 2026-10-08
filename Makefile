@@ -115,4 +115,23 @@ secret-hygiene: ## no secret in a repo or an image, and the shared pairs match
 pin-images: ## re-pin production to the newest smoke-passed images (review the diff)
 	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/pin-image.sh
 
-.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images
+# M8's acceptance walk: one complete session through the public surface, printed as
+# a table (register → sign in → clarify → probe → plan → approve → materials → the
+# sandbox's iframe fetch of a slide → and the rule that /api/compile is not a
+# public route). It reports which mode the live Deployment says it is in, because a
+# mock pass and a real pass are different claims. `ALLOW_FAIL=1` is for the
+# real-mode control run, where the LLM phases are expected to fail.
+acceptance: ## walk one session through the public surface
+	NO_PROXY=localhost,127.0.0.1 python3 scripts/acceptance.py $(ARGS)
+
+# MOCK_LLM=1 makes the backend answer its LLM-dependent phases from canned
+# responses on in-memory SQLite — the cheapest full walk of DNS, TLS, routing,
+# probes and the sandbox fetch, and it spends no tokens. Setting it by hand is
+# deliberate drift: `make deploy` (or a CI deploy) removes it, which is the point.
+mock-on: ## set MOCK_LLM=1 on the live backend (drift on purpose; make deploy reverts it)
+	$(kenv) kubectl -n $(NS) set env deployment/backend MOCK_LLM=1
+
+mock-off: ## take MOCK_LLM off without waiting for a deploy
+	$(kenv) kubectl -n $(NS) set env deployment/backend MOCK_LLM-
+
+.PHONY: help tf-fmt dns-check tf-init tf-plan tf-apply tf-apply-yes tf-output secrets deploy kcreds kcheck secrets-check secret-hygiene pin-images acceptance mock-on mock-off
