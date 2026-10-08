@@ -71,7 +71,12 @@ jobs:
           # binary first, and if it has to be installed, do not hide the output:
           # the first failure of this step was un diagnosable because I did.
           if ! command -v gke-gcloud-auth-plugin >/dev/null 2>&1; then
-            gcloud components install gke-gcloud-auth-plugin --quiet
+            # The runner's gcloud is apt-packaged: its component manager is
+            # disabled and the error names the apt package. Other installations
+            # (including this laptop) use the component manager, so both are tried
+            # and neither is hidden.
+            (sudo apt-get update -qq && sudo apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin) ||
+              gcloud components install gke-gcloud-auth-plugin --quiet
           fi
           command -v gke-gcloud-auth-plugin >/dev/null ||
             { echo "::error::gke-gcloud-auth-plugin is not on PATH after install"; exit 1; }
