@@ -57,6 +57,14 @@ the change was tested.
   because a push made with `GITHUB_TOKEN` starts no workflows. The laptop path
   (`make deploy`) still exists and does the identical thing through a different
   identity.
+- **One credential exists because of a GitHub limit, not a preference:** each
+  application repository holds a repository secret, `DELIVERY_TOKEN` — a
+  fine-grained PAT whose only permission is starting workflows in this repository.
+  It is there because `workflow_run` does not cross repositories: that was tested
+  (a completed run in another repository produced nothing here, on `release` and on
+  the default branch alike), not read. Without the secret the application workflow
+  warns and exits successfully, and the scheduled reconciliation still delivers —
+  the token buys minutes, not correctness.
 - Two deliveries cannot overlap: both jobs hold a `concurrency` group. A rejected
   pin push means `main` moved while the job ran, and the job replays its decision
   rather than merging it.
