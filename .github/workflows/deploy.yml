@@ -66,8 +66,16 @@ jobs:
       - name: Cluster credentials, through application default credentials
         run: |
           set -euo pipefail
-          gcloud components install gke-gcloud-auth-plugin --quiet >/dev/null 2>&1 ||
-            { echo "::error::gke-gcloud-auth-plugin could not be installed on this runner"; exit 1; }
+          # The runner image may already carry the plugin, and `gcloud components
+          # install` exits non-zero when the component is present — so ask for the
+          # binary first, and if it has to be installed, do not hide the output:
+          # the first failure of this step was un diagnosable because I did.
+          if ! command -v gke-gcloud-auth-plugin >/dev/null 2>&1; then
+            gcloud components install gke-gcloud-auth-plugin --quiet
+          fi
+          command -v gke-gcloud-auth-plugin >/dev/null ||
+            { echo "::error::gke-gcloud-auth-plugin is not on PATH after install"; exit 1; }
+          gke-gcloud-auth-plugin --version
           ./scripts/ci-kubeconfig.sh "$RUNNER_TEMP/kubeconfig-ci"
           echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig-ci" >> "$GITHUB_ENV"
           kubectl get --raw /readyz >/dev/null
