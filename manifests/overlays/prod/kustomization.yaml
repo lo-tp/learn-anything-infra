@@ -38,7 +38,7 @@ images:
   - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-backend
     # The cookie-scope fix (core/security.cookie_policy) rides with the ingress:
     # a shared-domain cookie is only observable once two hosts are actually served.
-    digest: sha256:4cf283528e5ff79671eb200c0e9d83278abda9878394c270f9c7dfb258a11f37  # sha-5e2a9fa4 (CI, 5e2a9fa4)
+    digest: sha256:0944292813699ef1bde244690866d5ad37d64ef0f3976605e20c8cc4e91ee357  # sha-d90b13eae4b138333e05d60a644c0037d5d6b629 (CI, d90b13ea), built 2026-10-08
   # The frontend and sandbox images come from their own repositories' Actions runs.
   # Their workflows' smoke steps are the gate that matters for these two: the
   # frontend must redirect an anonymous visitor and render a page whose text comes
@@ -50,7 +50,7 @@ images:
   # render would keep the `:placeholder` (which is what the first version of these
   # two entries did, and the deploy reported no change at all).
   - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-frontend
-    digest: sha256:c04e93b7c150c5953c72be0687871a55d6864d0f09ee67edeb26c0fc34b48f99  # sha-e3362e7c (CI)
+    digest: sha256:4729baf723cbb35e583d2d7b7816d3a25fc75a9b53e1537f2cb195f508323fd7  # sha-d29c42531e9a21d72d762b2d00b2bb281dc8086f (CI, d29c4253), built 2026-10-08
     # No `newApiBase` override anywhere: see manifests/base/frontend.yaml. Pointing
     # the browser at a staging surface is a new image built with that origin, not a
     # manifest change.
