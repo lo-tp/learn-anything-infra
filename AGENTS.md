@@ -33,7 +33,13 @@ Three documents carry the rest, each reached by its own condition:
 
 - [`PLAN.md`](./PLAN.md) — the ordered milestones and what counts as each one
   being done. Read it before starting any infra work, and update it when a
-  milestone changes.
+  milestone changes. Its `**Status: done…**` paragraphs are **dated findings**, not
+  current status: what production runs is `images:` in
+  `manifests/overlays/prod/kustomization.yaml`, and nothing in PLAN.md is
+  authoritative about digests.
+- [`README.md`](./README.md) — the front door for a human reader. Keep it
+  descriptive rather than status-carrying: it may name what is open, but it must
+  not become a second place that claims what is deployed.
 - [`CONTEXT.md`](./CONTEXT.md) — the vocabulary: *surface*, *public surface*,
   *internal call*, *service principal*, *foreign record*, *cutover*, *turn-off
   order*. Use these words; the glossary lists what to avoid.
@@ -51,7 +57,7 @@ editing it.
 | Backend API | Python, FastAPI | `~/Desktop/Personal/project/python/learn-anything-backend` | https://github.com/lo-tp/learn-anything-backend |
 | Frontend | Next.js | `~/Desktop/Personal/project/javascript/learn-anything` | https://github.com/lo-tp/learn-anything-frontend |
 | Sandbox | Next.js | `~/Desktop/Personal/project/javascript/learn-anything-sandbox` | https://github.com/lo-tp/learn-anything-sandbox |
-| Infrastructure (this repo) | Terraform, Kubernetes | `~/Desktop/Personal/project/learn-anything-infra` | — |
+| Infrastructure (this repo) | Terraform, Kubernetes | `~/Desktop/Personal/project/learn-anything-infra` | https://github.com/lo-tp/learn-anything-infra |
 
 The frontend is the user-facing app; the backend serves its API; the sandbox runs
 user code in an isolated Next.js service. Data lives in PostgreSQL (see below).
@@ -385,6 +391,3 @@ the two disagree, this repo is right and the dashboard is wrong.
 
 `blog.lotp.xyz` is a **foreign record**: read it, preserve it, never edit it. TLS
 certificates and Ingress hostnames must match the records declared here.
-
-
-My domain is lotp.xyz, blog lives at blog.lotp.xyz
