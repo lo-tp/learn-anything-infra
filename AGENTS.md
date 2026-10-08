@@ -175,6 +175,17 @@ resources found` is the expected state, not a failure. Nodes appear when a
 workload schedules, and disappear again. The managed namespaces
 (`gke-gmp-system`, `gke-managed-cim`, …) exist without any node in sight.
 
+A **pipeline uses the third identity**: `deploy-ci`, through Workload Identity
+Federation, with no gcloud login and no stored key (`scripts/ci-kubeconfig.sh`).
+It reads ADC, which is a service-account credential there — the same situation that
+makes `gke-gcloud-auth-plugin` crash on the laptop, and the plugin's
+`--use_application_default_credentials=true` is what avoids it *when the plugin
+exists*. On GitHub runners it does not: gcloud's component manager is disabled and
+the plugin's apt package is in no configured repository, so the script writes a
+token-form kubeconfig instead (the plugin's only job is to mint that token, and a
+deploy is shorter than the credential that authorizes it). The script prints which
+form it wrote.
+
 ## Container images
 
 Each app's image is built in its own repository and smoke-tested there, then pinned
@@ -232,6 +243,16 @@ own skips the gate; use it only for changes that cannot touch the schema.
   `kubectl kustomize manifests/overlays/prod` should be empty. A non-empty diff is
   either an unapplied change or something edited in the cluster, and both are
   facts worth having before the next deploy.
+- **CI runs the apply; Terraform still does not leave the laptop.**
+  `.github/workflows/deploy.yml` (push to `main` touching `manifests/` or
+  `scripts/`, or manual) renders the Secret objects and runs `scripts/deploy.sh`,
+  then fails if `kubectl diff` against the rendered overlay is not empty. Its
+  authority is the merge; the job only carries it. `.github/workflows/pin-image.yml`
+  is the other half: it reads the registry, and when a newer smoke-passed image
+  exists it opens a pull request against one reused branch (`pin/images`) instead of
+  applying anything. Merging in the UI matters — a merge performed with the job's
+  own `GITHUB_TOKEN` does not re-trigger workflows, and the pin→deploy handoff
+  depends on that distinction.
 - **Secret values live in Secret Manager, never here.** `make secrets` renders them
   into the cluster Secrets the workloads read (`backend-env`, `sandbox-env`,
   `database-env`) and tells you, out loud, when an entry still holds a placeholder

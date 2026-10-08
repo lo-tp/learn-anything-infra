@@ -55,9 +55,8 @@ jobs:
         with:
           workload_identity_provider: ${{ env.WIF_PROVIDER }}
           service_account: ${{ env.WIF_SERVICE_ACCOUNT }}
-          # A deploy is minutes. A credential that outlives the job is a
-          # credential someone has to reason about.
-          access_token_lifetime: 900s
+          # A deploy is minutes; this is the ceiling, not the expected use.
+          access_token_lifetime: 1800s
 
       # The kubeconfig this job needs is the ADC one; the laptop's
       # `.kubeconfig-gke` (human identity, gke-gcloud-auth-plugin reading the
@@ -65,22 +64,15 @@ jobs:
       # in a pipeline and no reason there should be one.
       - name: Cluster credentials, through application default credentials
         run: |
+          # A pipeline has application default credentials and no gcloud login, so
+          # this is the kubeconfig that fits: scripts/ci-kubeconfig.sh reads the
+          # cluster from the API and writes an entry whose credential comes from
+          # ADC. On a runner that means a token written directly — GitHub's gcloud
+          # has its component manager disabled and the plugin's apt package is in no
+          # configured repository (both attempts failed, in 6 seconds each).
+          # A deploy finishes well inside the credential's own lifetime, and the
+          # script says which form it wrote.
           set -euo pipefail
-          # The runner image may already carry the plugin, and `gcloud components
-          # install` exits non-zero when the component is present — so ask for the
-          # binary first, and if it has to be installed, do not hide the output:
-          # the first failure of this step was un diagnosable because I did.
-          if ! command -v gke-gcloud-auth-plugin >/dev/null 2>&1; then
-            # The runner's gcloud is apt-packaged: its component manager is
-            # disabled and the error names the apt package. Other installations
-            # (including this laptop) use the component manager, so both are tried
-            # and neither is hidden.
-            (sudo apt-get update -qq && sudo apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin) ||
-              gcloud components install gke-gcloud-auth-plugin --quiet
-          fi
-          command -v gke-gcloud-auth-plugin >/dev/null ||
-            { echo "::error::gke-gcloud-auth-plugin is not on PATH after install"; exit 1; }
-          gke-gcloud-auth-plugin --version
           ./scripts/ci-kubeconfig.sh "$RUNNER_TEMP/kubeconfig-ci"
           echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig-ci" >> "$GITHUB_ENV"
           kubectl get --raw /readyz >/dev/null
