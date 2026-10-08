@@ -55,10 +55,12 @@ otherwise guess wrong:
 An order, not a command. Every step is enforced by a workflow or a script, not by
 discipline:
 
-1. **Build and smoke-test in the app's own repository.** The workflow publishes to
-   Artifact Registry only *after* the image answered a real request — `/health`,
-   the auth redirect to `/en/login`, `/api/compile`. An image that never served a
-   request never gets a tag.
+1. **Build and smoke-test in the app's own repository.** Only the `release` branch
+   publishes: `main` is checked — lint, typecheck, unit tests — and never builds an
+   image, and merging `main` into `release` is the act that means *this goes live*.
+   The workflow then publishes to Artifact Registry only *after* the image answered a
+   real request — `/health`, the auth redirect to `/en/login`, `/api/compile`. An
+   image that never served a request never gets a tag.
 2. **Pin it here, by digest.** `pin-image.yml` opens a pull request against one
    reused branch; `images:` in `manifests/overlays/prod/kustomization.yaml` is the
    record of what production runs, and **`git diff` of that block is the

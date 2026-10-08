@@ -4,10 +4,12 @@
 #
 # The registry is the source of truth for what exists: a `sha-<commit>` tag appears
 # only after that image's own workflow built it **and its smoke step passed** — the
-# publish step runs after the smoke test, by design. So the newest tagged version of
-# each package is the candidate, and this script's job is to turn that into a pinned
-# digest in `manifests/overlays/prod/kustomization.yaml`, keeping the tag in the
-# comment beside it, because a bare digest is a fact no human can look up.
+# publish step runs after the smoke test, by design, and only `release` publishes.
+# Which branch a tag came from is deliberately not part of the resolution: the
+# newest tagged version of each package is the candidate, and this script's job is to
+# turn that into a pinned digest in `manifests/overlays/prod/kustomization.yaml`,
+# keeping the tag in the comment beside it, because a bare digest is a fact no human
+# can look up.
 #
 # What it does not do: decide that a change is good. It writes a file. The pull
 # request is what a human reads and merging is what deploys —

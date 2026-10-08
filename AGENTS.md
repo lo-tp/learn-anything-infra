@@ -121,6 +121,10 @@ paths belong to a machine, so they are not written here: on this machine they ar
   implement the contract yet.
 - Service discovery, ports and environment-variable names are owned here; an app's
   image is built in its own repo. This repo consumes digests.
+- **Only the `release` branch of an app repository publishes an image.** `main` is
+  checked (lint, typecheck, unit tests) and never builds one; promoting code means
+  merging `main` into `release`, which is protected and merge-only so the commit a
+  pin comment names stays reachable on `main`.
 
 ## On a machine that has never run this
 
