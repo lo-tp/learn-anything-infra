@@ -134,13 +134,23 @@ The **user** unit is the one that matters: the macOS client talks to
 nothing. `systemctl --user restart podman` leaves running containers alone;
 `podman machine restart` does not.
 
-Sizing: the machine shipped with 5 CPUs and 2 GiB, which is too small to build an
-image with a real dependency tree. It is set to 8 CPUs / 12 GiB:
+**Neither this nor the sizing below is applied as of 2026-10-08.** The M2 image work
+needed both, and they were reverted afterwards at your request — the drop-in is
+gone, the machine is back to its shipped **5 CPUs / 2 GiB**, and the images and
+build layers that job produced were deleted. So: *pulling anything, or building an
+image with a real dependency tree, is not currently possible on this machine.*
+Apply both first when you next need to. Nothing in this plan depends on being able
+to: images are built and smoke-tested in CI, and podman is the local path only.
+
+Sizing, when a local build is needed (2 GiB is too small for a real dependency
+tree):
 
 ```sh
 podman machine stop
 podman machine set --cpus 8 --memory 12288
 podman machine start
+# and back again when finished:
+podman machine stop && podman machine set --cpus 5 --memory 2048 && podman machine start
 ```
 
 A machine restart stops running containers, and any container whose restart policy
