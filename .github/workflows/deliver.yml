@@ -31,18 +31,34 @@
 name: deliver
 
 on:
-  # The fast path: an application repository's image workflow finished on `release`.
-  # `workflow_run` matches by workflow *name*, and `build image` is the name the
-  # three application repositories use — the branch filter is `release`, the only
-  # branch that publishes. A failed build never reaches this job.
-  workflow_run:
-    workflows: ["build image"]
-    branches: [release]
-    types: [completed]
-  # The safety net, at a quiet minute. Same job, same effect.
+  # The fast path: an application repository's image workflow, after it published,
+  # dispatches this one and names itself in the inputs. `workflow_run` does not cross
+  # repositories — tested, not assumed: a completed run in another repository produced
+  # nothing here, on `release` and on the default branch alike — so the hand-off is an
+  # explicit `gh workflow run` from that workflow. It needs one repository secret
+  # there (`DELIVERY_TOKEN`: a fine-grained PAT allowed to start workflows in this
+  # repository and nothing else). If that secret is missing, the app workflow says so
+  # out loud rather than failing a build whose image already shipped.
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: URL of the application repository run that published the image
+        required: false
+        type: string
+      source_repo:
+        description: The repository that published it
+        required: false
+        type: string
+      source_branch:
+        description: The branch it was published from
+        required: false
+        type: string
+  # The safety net — and the path that works before that token exists. A public
+  # repository has free runner minutes, so making convergence frequent costs nothing;
+  # this job is idempotent, so most of these runs do one thing: compare, find nothing
+  # to do, and say so.
   schedule:
-    - cron: "17 3,9,15,21 * * *"
-  workflow_dispatch: {}
+    - cron: "*/15 * * * *"
 
 # One delivery at a time. Two of these racing would mean two commits touching the
 # same `images:` block and two deploys racing on the same migration Job.
@@ -63,15 +79,14 @@ env:
 
 jobs:
   deliver:
-    # Only deliver what built. A red build means a red smoke test: no new image
-    # exists, so there is nothing to pin.
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # Two things start this job and both mean the same thing: reconcile production
+    # with what the registries hold. Nothing below depends on which one fired.
     runs-on: ubuntu-latest
     steps:
-      # For a `workflow_run` event this checks out this repository's default branch,
-      # which is exactly the base the pin commit should sit on. The branch the
-      # *image* was built from is not needed here: the registry is what says what
-      # exists, and `sha-<commit>` names are resolved by `scripts/pin-image.sh`.
+      # This checks out this repository's default branch, which is exactly the base
+      # the pin commit should sit on. The branch the *image* was built from is not
+      # needed here: the registry is what says what exists, and `sha-<commit>` names
+      # are resolved by `scripts/pin-image.sh`.
       - uses: actions/checkout@v4
 
       - id: auth
@@ -94,9 +109,9 @@ jobs:
         if: steps.plan.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_RUN: ${{ github.event.workflow_run.html_url }}
-          SOURCE_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
-          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
         run: |
           set -euo pipefail
           ./scripts/pin-image.sh > /dev/null
@@ -149,5 +164,5 @@ jobs:
               echo "pinned and dispatched; the deploy is here:"
               gh run list --workflow=deploy.yml --limit 1 --json url,status -q '.[0] | "\(.url) (\(.status))"'
               ;;
-            *) echo "this job did not run (the triggering build was not successful, or it was skipped)" ;;
+            *) echo "this job did not run" ;;
           esac
