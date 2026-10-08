@@ -22,10 +22,13 @@
 # `git revert` the pin and push it, and `deploy.yml` runs again against the previous
 # digests. (`docs/adr/0007`.)
 #
-# The schedule is not the trigger any more; it is the safety net. Events can be
-# missed — a runner dies, a workflow is renamed — and convergence shouldn't depend
-# on not missing anything, so twice-a-day reconciliation still runs, and this job is
-# idempotent: if production already names the newest published images, it says so and
+# The schedule is a safety net in *intent* — events get missed — but it has never
+# fired here. Checked on 2026-10-08 across every run this repository has: 16 `push`,
+# 7 `workflow_dispatch`, **zero `schedule`** — including the daily pin cron that used
+# to live in this file, which likewise never produced a run. So the dispatch below is
+# the only trigger that has been seen to work, and the human fallback is
+# `gh workflow run deliver.yml -R lo-tp/learn-anything-infra`. The job is idempotent
+# either way: if production already names the newest published images, it says so and
 # changes nothing.
 
 name: deliver
@@ -53,10 +56,12 @@ on:
         description: The branch it was published from
         required: false
         type: string
-  # The safety net — and the path that works before that token exists. A public
-  # repository has free runner minutes, so making convergence frequent costs nothing;
-  # this job is idempotent, so most of these runs do one thing: compare, find nothing
-  # to do, and say so.
+  # Intended as the safety net; **not observed to have run**. No `schedule`-event run
+  # exists in this repository's history (checked 2026-10-08), and GitHub has open
+  # reports of cron triggers creating no run at all on free-plan accounts. The
+  # configuration is correct and costs nothing on a public repository, so it stays —
+  # but a fallback nobody has seen is a hope, not a fallback, and the check is
+  # `gh run list -R lo-tp/learn-anything-infra --event=schedule`.
   schedule:
     - cron: "*/15 * * * *"
 

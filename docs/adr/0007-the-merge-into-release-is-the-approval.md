@@ -51,8 +51,13 @@ the change was tested.
   revert — the same constraint as before, now with less ceremony around it.
 - Deploys become more frequent and smaller, which is the point: a change that
   reaches production alone is a change whose cause is known.
-- The scheduled reconciliation run (twice a day) stays as a safety net rather than
-  the trigger. Events get missed; convergence should not depend on not missing one.
+- The scheduled reconciliation run stays in the configuration as a safety net, and is
+  **not claimed as behaviour**: no `schedule`-event run exists in this repository's
+  history (checked 2026-10-08 — 16 `push`, 7 `workflow_dispatch`, zero `schedule`,
+  including the daily pin cron that preceded this workflow, which also never fired).
+  Until one appears, the hand-off dispatch is the only trigger known to work, and the
+  fallback is a person: `gh workflow run deliver.yml`, or `make pin-images` followed by
+  `make deploy` from a laptop.
 - One path to production, not two: the pin job *dispatches* `deploy.yml` explicitly,
   because a push made with `GITHUB_TOKEN` starts no workflows. The laptop path
   (`make deploy`) still exists and does the identical thing through a different
@@ -63,8 +68,10 @@ the change was tested.
   It is there because `workflow_run` does not cross repositories: that was tested
   (a completed run in another repository produced nothing here, on `release` and on
   the default branch alike), not read. Without the secret the application workflow
-  warns and exits successfully, and the scheduled reconciliation still delivers —
-  the token buys minutes, not correctness.
+  warns and exits successfully rather than failing a build whose image already
+  shipped — but then nothing delivers it by itself. **The token is load-bearing, not
+  an optimisation**, which is the difference between this note and the first draft of
+  it: the schedule it leans on has never run.
 - Two deliveries cannot overlap: both jobs hold a `concurrency` group. A rejected
   pin push means `main` moved while the job ran, and the job replays its decision
   rather than merging it.
