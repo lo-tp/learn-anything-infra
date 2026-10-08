@@ -58,7 +58,8 @@ assumption: see the billing-export check added to Consequences.
   scaler, Knative's activator, or those two tiers on Cloud Run). This is not a
   detail: at Autopilot billing floors, pinning those two tiers at one replica costs
   roughly $25/month more than letting them sleep, which is over the budget this ADR
-  was written to fit. The options and the arithmetic are at PLAN.md M3, where the
+  was written to fit. The options and the arithmetic are in
+  [M3](../plan/m03-workloads-as-kustomize-base-overlays.md), where the
   choice is recorded as open; the choice of Autopilot itself is not reconsidered
   here, because the reason for it — learning Kubernetes on the tier where state
   actually lives — is unaffected.
@@ -80,8 +81,10 @@ that as a broken site, which is exactly what one did (a 502 at `learn.lotp.xyz`)
 So: zero is still the right *idle* state for those tiers in principle, and this
 decision's cost argument for preferring Autopilot stands; but "wake on request"
 requires either a queueing layer in the cluster (Knative's activator, KEDA's HTTP
-add-on — whose own control-plane pods cost about what they save, per PLAN.md M3)
-or those tiers living somewhere that does queue (Cloud Run, PLAN.md M3 option C).
+add-on — whose own control-plane pods cost about what they save, per
+[M3](../plan/m03-workloads-as-kustomize-base-overlays.md))
+or those tiers living somewhere that does queue (Cloud Run, option C in
+[M3](../plan/m03-workloads-as-kustomize-base-overlays.md)).
 Until that is chosen, the production overlay pins one replica of each with its
 reason in `manifests/overlays/prod/replica-floor.yaml`. This ADR's status is
 unchanged in intent and explicitly unfinished in mechanism.

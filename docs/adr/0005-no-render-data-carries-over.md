@@ -29,7 +29,7 @@ output.
   Development data from the *laptop* (the backend repo's local Compose Postgres, not
   Render's) was copied in on request: 23 users, 53 sessions, 36 plans, 862 slide
   contents. That is exactly the kind of history this ADR argues against, so the
-  contradiction is stated in [PLAN.md → M9](../../PLAN.md) with the method (a
+  contradiction is stated in [M9](../plan/m09-cutover-then-render-goes-away.md) with the method (a
   **replace**, not an append, so the cluster holds one set of rows) and the
   recovery point it moved (the 2026-10-07T17:30Z archive predates the import, so
   restoring it today would undo the copy). It is reversible, which is what made it

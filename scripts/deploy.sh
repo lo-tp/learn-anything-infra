@@ -8,7 +8,7 @@
 #
 # The order is the milestone: a failed migration stops here, with the Job's log
 # printed, and nothing under the workloads has been touched — so whatever was
-# serving before keeps serving (PLAN.md M5). This is not an atomic transaction and
+# serving before keeps serving (docs/plan/m05-migrations-as-a-gate.md). This is not an atomic transaction and
 # does not pretend to be: it is a gate with one failure mode, deliberately placed
 # where a human can read the reason.
 #

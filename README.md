@@ -97,9 +97,9 @@ runs:
 | [`AGENTS.md`](./AGENTS.md) | how to operate this: the proxy environment, why `gcloud` creates nothing, why `kubectl` and Terraform use different identities, the failure modes that look like something they are not |
 | [`CONTEXT.md`](./CONTEXT.md) | the vocabulary — *surface*, *public surface*, *internal call*, *foreign record*, *cutover*, *turn-off order*, *replica floor* vs *billing floor* |
 | [`docs/adr/`](./docs/adr/) | why the load-bearing choices went the way they did, including the ones where measurement overturned the design |
-| [`PLAN.md`](./PLAN.md) | a working document: the milestones, each with the condition that said it was done, and the dated findings of what actually happened |
+| [`docs/plan/`](./docs/plan/index.md) | a working document: the milestones, each with the condition that said it was done, and the dated findings of what actually happened |
 
-The findings in `PLAN.md` are the honest record of a plan meeting reality: an
+The milestone files under `docs/plan/` are the honest record of a plan meeting reality: an
 `ingress.kubernetes.io/force-ssl-redirect` annotation that the controller ignores
 because it is nginx's spelling; a woken tier answering 502 for minutes after its
 pod is Ready because the NEG attaches late; a scale-from-zero design that does not

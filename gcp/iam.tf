@@ -1,4 +1,4 @@
-# PLAN.md Step 0 lists these and why each one is needed. They live here rather
+# docs/plan/step-0-the-three-things-only-you-can-do.md lists these and why each one is needed. They live here rather
 # than as `gcloud` grants because an IAM binding is configuration: granted from a
 # shell it is invisible to `terraform plan` and unanswerable from the repo.
 locals {

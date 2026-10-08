@@ -18,7 +18,7 @@ resource "google_project" "main" {
 }
 
 # Declaring an API that the Step 0 bootstrap already enabled is a no-op, not
-# drift: PLAN.md names those bootstrap acts so nobody treats them as surprises.
+# drift: docs/plan/step-0-the-three-things-only-you-can-do.md names those bootstrap acts so nobody treats them as surprises.
 #
 # Everything that calls a Google API has to wait for its API to be enabled, which
 # is why the consumers in the other files carry `depends_on` on this collection.

@@ -24,19 +24,24 @@ single `add-iam-policy-binding` that gave `terraform-local` its first permission
 no other identity could have made it. It is never the thing that creates or
 changes a resource: if a `gcloud` command would make something exist in the cloud,
 that something belongs in Terraform instead. When a bootstrap act does touch the
-cloud, this file and `PLAN.md` say so, so it is not mistaken for drift.
+cloud, this file and [Step 0 of the plan](./docs/plan/step-0-the-three-things-only-you-can-do.md)
+say so, so it is not mistaken for drift.
 
 Never run `gcloud auth application-default login` here: it would silently repoint
 Terraform from `terraform-local` to a human identity. Use `gcloud auth login`.
 
 Three documents carry the rest, each reached by its own condition:
 
-- [`PLAN.md`](./PLAN.md) — the ordered milestones and what counts as each one
-  being done. Read it before starting any infra work, and update it when a
-  milestone changes. Its `**Status: done…**` paragraphs are **dated findings**, not
-  current status: what production runs is `images:` in
-  `manifests/overlays/prod/kustomization.yaml`, and nothing in PLAN.md is
-  authoritative about digests.
+- [`docs/plan/index.md`](./docs/plan/index.md) — the plan's index: the inputs the whole shape depends on,
+  the milestones in order, and the assumptions with their current standing. The
+  milestones themselves are one file each under [`docs/plan/`](./docs/plan/) (`step-0`,
+  `m01`…`m10`); read them in order, because each one's completion criterion is the
+  next one's foundation. Its `**Status: done…**` paragraphs are **dated findings**,
+  not current status: what production runs is `images:` in
+  `manifests/overlays/prod/kustomization.yaml`, and nothing in the plan is
+  authoritative about digests. Read the index and the milestone you are about to
+  touch before starting any infra work, and update that milestone's file — not the
+  index's table — when its status changes.
 - [`README.md`](./README.md) — the front door for a human reader. Keep it
   descriptive rather than status-carrying: it may name what is open, but it must
   not become a second place that claims what is deployed.

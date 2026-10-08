@@ -1,7 +1,7 @@
 # Two budgets with different jobs, and the difference is which one of them sees
 # credits.
 #
-# 1. The platform budget, filtered to this project: the ceiling from PLAN.md, per
+# 1. The platform budget, filtered to this project: the ceiling in docs/plan/index.md, per
 #    calendar month. `EXCLUDE_ALL_CREDITS` is the part that matters, and it was
 #    wrong here until M10 — the field "specifies how credits should be treated when
 #    determining spend for threshold calculations", so the previous

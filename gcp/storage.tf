@@ -1,5 +1,5 @@
 # Never the state bucket: different retention, and one bad `terraform destroy`
-# should not be able to reach the only copy of the data (ADR 0002, PLAN.md M4).
+# should not be able to reach the only copy of the data (ADR 0002, docs/plan/m04-postgres-in-cluster.md).
 resource "google_storage_bucket" "pgdump" {
   name                        = "learn-anything-pgdump"
   location                    = var.region

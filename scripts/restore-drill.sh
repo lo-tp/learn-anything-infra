@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The restore drill (PLAN.md M9): read a nightly `pg_dump` back with `pg_restore`,
+# The restore drill (docs/plan/m09-cutover-then-render-goes-away.md): read a nightly `pg_dump` back with `pg_restore`,
 # into a throwaway database in the same cluster, and compare what it holds with
 # what the live database holds.
 #

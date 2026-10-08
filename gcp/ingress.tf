@@ -40,7 +40,7 @@ locals {
   # …and which of them are expected to resolve *today*. The staging hosts are
   # declared but not pointed: an address has exactly one global forwarding rule, so
   # a second environment is a second address and a second (billed) forwarding rule,
-  # not another set of host rules on the first one — see PLAN.md M6 and
+  # not another set of host rules on the first one — see docs/plan/m06-one-public-surface-three-hostnames-real-certificates.md and
   # manifests/overlays/prod/ingress.yaml. A record that resolves to an address with
   # no rule behind it looks exactly like a broken deploy, so those rows are printed
   # separately and marked as held rather than typed and forgotten.

@@ -63,7 +63,7 @@ variable "monthly_platform_budget_usd" {
   description = <<-EOT
     A tripwire on the platform bill, not a target. It must sit above the cost of
     the topology actually running, or it fires every month and stops being an
-    alert: with three tiers pinned at one replica (PLAN.md M3, option D, chosen
+    alert: with three tiers pinned at one replica (docs/plan/m03-workloads-as-kustomize-base-overlays.md, option D, chosen
     2026-10-08) the always-on floor is four pods at Autopilot's per-pod minimum —
     about twice the two-pod rate measured in M4, order 50 USD/month — before any
     load-balancer line. So this figure is "something is wrong above here": a
@@ -120,7 +120,7 @@ variable "public_hostnames" {
 variable "staging_hostnames" {
   description = <<-EOT
     The staging variants, named the same way rather than as a sub-zone: one level,
-    one cert, no second zone to delegate. See PLAN.md M6.
+    one cert, no second zone to delegate. See docs/plan/m06-one-public-surface-three-hostnames-real-certificates.md.
   EOT
   type        = list(string)
   default     = ["staging.learn", "staging.api", "staging.sandbox"]
