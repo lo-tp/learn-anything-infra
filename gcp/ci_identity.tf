@@ -29,7 +29,7 @@ resource "google_iam_workload_identity_pool" "github" {
 # the default `google.subject` (`repo:<repo>:refs/heads/<branch>`) would tie the
 # grant to one branch.
 resource "google_iam_workload_identity_pool_provider" "github" {
-  for_each = toset(var.image_repositories)
+  for_each = toset(var.ci_repositories)
 
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = replace(each.value, "/", "-")
@@ -53,7 +53,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 # resource attributes leaves the key set unknown at plan time, which Terraform
 # refuses rather than guessing.
 resource "google_service_account_iam_member" "deploy_ci_workload" {
-  for_each = toset(var.image_repositories)
+  for_each = toset(var.ci_repositories)
 
   service_account_id = google_service_account.deploy_ci.name
   role               = "roles/iam.workloadIdentityUser"

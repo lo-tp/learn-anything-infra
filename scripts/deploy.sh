@@ -20,8 +20,10 @@
 # Usage:
 #   NAMESPACE=learn-anything scripts/deploy.sh prod
 #
-# Requires kubectl configured as a human (make kcreds). Interim until M7/M8 put
-# these same steps, in this same order, in the pipeline.
+# Run by `make deploy` (human identity via make kcreds) and by
+# .github/workflows/deploy.yml (application default credentials via
+# scripts/ci-kubeconfig.sh). Nothing in here depends on which; that is the point of
+# M7 — the order is the contract, the identity is a detail.
 set -euo pipefail
 
 environment="${1:-prod}"

@@ -1,0 +1,104 @@
+# Apply what this repository declares: render the Secret objects from Secret
+# Manager, run the migration gate, apply the overlays, wait for the rollout. This
+# is the M5 order in `scripts/deploy.sh`, now run by a pipeline instead of a
+# laptop — which is what M7 asked for ("no always-on sync controller": the
+# reconcile happens at deploy time, by whoever or whatever deploys).
+#
+# The laptop path (`make deploy`) still exists and does the identical thing; the
+# two differ only in identity — a human through the gcloud configuration, this job
+# through application default credentials (scripts/ci-kubeconfig.sh).
+#
+# What stays on a laptop: Terraform. An apply here would need the state
+# credentials and would make a pipeline the thing that changes cloud resources
+# during a manifest edit, which is how surprises get expensive.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - manifests/**
+      - scripts/**
+      - .github/workflows/deploy.yml
+  workflow_dispatch: {}
+
+# One deploy at a time, and never cancel one that has started: the migration Job
+# is the gate, and a cancelled job halfway through it is a half-run gate.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # the OIDC token the workload identity provider trusts
+
+env:
+  # `terraform output project_id` is the authority; it is written here because a
+  # pipeline that queries Terraform state to find out which project it is in has
+  # a chicken-and-egg problem.
+  PROJECT_ID: learn-anything-510905
+  REGION: asia-east2
+  # projects/<PROJECT_NUMBER>/…, not projects/<PROJECT_ID>/… — see
+  # `terraform output workload_identity_provider_names` (AGENTS.md, "Deploys").
+  WIF_PROVIDER: projects/358071090957/locations/global/workloadIdentityPools/learn-anything-github/providers/lo-tp-learn-anything-infra
+  WIF_SERVICE_ACCOUNT: deploy-ci@learn-anything-510905.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.WIF_SERVICE_ACCOUNT }}
+          # A deploy is minutes. A credential that outlives the job is a
+          # credential someone has to reason about.
+          access_token_lifetime: 900s
+
+      # The kubeconfig this job needs is the ADC one; the laptop's
+      # `.kubeconfig-gke` (human identity, gke-gcloud-auth-plugin reading the
+      # gcloud configuration) would fail here, because there is no gcloud login
+      # in a pipeline and no reason there should be one.
+      - name: Cluster credentials, through application default credentials
+        run: |
+          set -euo pipefail
+          gcloud components install gke-gcloud-auth-plugin --quiet >/dev/null 2>&1 ||
+            { echo "::error::gke-gcloud-auth-plugin could not be installed on this runner"; exit 1; }
+          ./scripts/ci-kubeconfig.sh "$RUNNER_TEMP/kubeconfig-ci"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig-ci" >> "$GITHUB_ENV"
+          kubectl get --raw /readyz >/dev/null
+          echo "control plane reachable as $(kubectl auth whoami --output=jsonpath='{.status.userInfo.username}' 2>/dev/null || echo unknown)"
+
+      # Namespace comes from the overlay, so there is one place that says it.
+      - name: Render the Secret objects from Secret Manager
+        run: |
+          set -euo pipefail
+          ns="$(awk '/^namespace:/{print $2; exit}' manifests/overlays/prod/kustomization.yaml)"
+          ./scripts/render-secrets.sh "$ns"
+
+      - name: Deploy: migrations, then workloads, then rollout
+        run: |
+          set -euo pipefail
+          ns="$(awk '/^namespace:/{print $2; exit}' manifests/overlays/prod/kustomization.yaml)"
+          NAMESPACE="$ns" ./scripts/deploy.sh prod
+
+      # The apply either converged or this job fails: a deploy that "succeeded"
+      # while the cluster still differs from the manifests is the failure mode this
+      # whole arrangement exists to avoid.
+      - name: Confirm the cluster matches the manifests
+        run: |
+          set -euo pipefail
+          ns="$(awk '/^namespace:/{print $2; exit}' manifests/overlays/prod/kustomization.yaml)"
+          if ! kubectl diff -f <(kubectl kustomize manifests/overlays/prod) >/dev/null 2>&1; then
+            echo "::error::the cluster still differs from the rendered overlay"
+            kubectl diff -f <(kubectl kustomize manifests/overlays/prod) | head -60
+            exit 1
+          fi
+          echo "no drift"
+          kubectl get deploy -n "$ns" \
+            -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,IMAGE:.spec.template.spec.containers[0].image \
+            --no-headers | sed 's/asia-east2-docker.pkg.dev[^ ]*\///'

@@ -19,17 +19,26 @@ variable "cluster_name" {
   default = "learn-anything"
 }
 
-variable "image_repositories" {
+variable "ci_repositories" {
   description = <<-EOT
-    GitHub repositories allowed to push images through the shared deploy identity.
-    One pool, one provider per repository, because the condition that makes a
-    GitHub OIDC token trustworthy has to name the repository it came from.
+    GitHub repositories allowed to assume the shared deploy identity. One pool, one
+    provider per repository, because the condition that makes a GitHub OIDC token
+    trustworthy has to name the repository it came from.
+
+    The three image repositories push images through it. The infrastructure
+    repository is listed because M7 moved the apply there: it renders Secret
+    objects and applies the overlays, which is why `deploy-ci` holds
+    `container.developer` and `secretmanager.secretAccessor` as well as a registry
+    writer role. The roles belong to the service account, not to a repository, so
+    every pipeline holds every role — the deploy job can push images and the image
+    jobs could apply workloads. Worth naming rather than discovering later.
   EOT
   type        = list(string)
   default = [
     "lo-tp/learn-anything-backend",
     "lo-tp/learn-anything-frontend",
     "lo-tp/learn-anything-sandbox",
+    "lo-tp/learn-anything-infra",
   ]
 }
 
