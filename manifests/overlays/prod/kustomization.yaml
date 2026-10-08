@@ -55,7 +55,7 @@ images:
     # the browser at a staging surface is a new image built with that origin, not a
     # manifest change.
   - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-sandbox
-    digest: sha256:e6098c5e882e061a22058d2eed092db4c86a50bc005415fd038c17c473065424  # sha-00ebb943c4bd294b4ad79707c0deee745d71f71b (CI, 00ebb943), built 2026-10-08
+    digest: sha256:a0ce09d6510d166c00840c7f543c02a0b1a1404035d77ff6eac107fe0364d846  # sha-50ceea1805423e816b97cdeafdd1fa66241abdfd (CI, 50ceea18), built 2026-10-08
 configMapGenerator:
   # Consumed by the backend only (the frontend has no runtime config; the sandbox
   # has its own). These are origins, not secrets: what the browser is told to call
