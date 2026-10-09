@@ -66,6 +66,13 @@ spec:
           # The path is therefore paired with `app/api/health/route.ts` over there —
           # either repository moving it on its own reproduces the outage, and only a
           # probe against the running image says so.
+          #
+          # The balancer's own health check is declared below as `frontend-health`
+          # rather than left to be inferred from this probe. The inference happens
+          # once, when the NEG is created; editing the probe afterwards moves the
+          # kubelet's probe and nothing else. Two judges with silently different
+          # definitions of one check is the bug, so the URL now has one definition,
+          # written down.
           readinessProbe:
             httpGet:
               path: /api/health
@@ -88,6 +95,10 @@ metadata:
   labels:
     app.kubernetes.io/name: frontend
     app.kubernetes.io/part-of: learn-anything
+  annotations:
+    # Attaching a BackendConfig by port is the documented shape for a NEG backend
+    # (https://cloud.google.com/kubernetes-engine/docs/concepts/backend-config).
+    cloud.google.com/backend-config: '{"ports": {"80": "frontend-health"}}'
 spec:
   type: ClusterIP
   selector:
@@ -96,6 +107,41 @@ spec:
     - name: http
       port: 80
       targetPort: http
+---
+# The load balancer's health check for this workload, said out loud.
+#
+# M6's notes recorded three BackendConfigs with `healthCheck` blocks that "changed
+# nothing", and the reason is worth keeping: for a NEG the controller derives the
+# health check from the workload's readiness probe *once*, at NEG creation, and
+# then leaves it alone. Editing the probe on an existing NEG changes the kubelet's
+# probe and nothing else — which is how #158 survived its own deploy. The pods
+# rolled to an image that answers `/api/health`, the Deployment was healthy, the
+# rollout converged, and the cloud health check created on 2026-10-07 kept asking
+# for `/en/login`. What `kubectl` calls Ready and what the URL map routes to are
+# two different questions, and only one of them lives in the Deployment.
+#
+# The interval and timeout below are the ones the controller arrived at by itself;
+# nothing is tuned, only written down. The number that matters is `requestPath`,
+# and it has to agree with the readiness probe above and with
+# `app/api/health/route.ts` in the frontend repository. Those three are one fact
+# about one URL.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: frontend-health
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: learn-anything
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /api/health
+    # The NEG's serving port; naming it keeps the object readable.
+    port: 3000
+    checkIntervalSec: 15
+    timeoutSec: 15
+    healthyThreshold: 1
+    unhealthyThreshold: 2
 ---
 # Scale-to-zero is what makes an idle app free (ADR 0001), and this is where that
 # design meets the API. Two facts, both measured against this cluster rather than
