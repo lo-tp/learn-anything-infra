@@ -46,15 +46,29 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
-          # The path is `/en/login`, not `/`: the root is a redirect to the
-          # sign-in page, and a check that passes on a 307 proves the process is
-          # listening, not that the app serves a page. GKE reads this probe when it
-          # builds the load balancer's health check for the NEG (M6), so it is read
-          # by two judges — the kubelet and the URL map — and it has to be a
-          # definition both can use: 200, with no dependency behind it.
+          # This probe is read by two judges, and they do not agree about what
+          # passing means. GKE builds the load balancer's health check for the NEG
+          # from it (M6), so the kubelet sees it too: the kubelet counts any 2xx
+          # *or* 3xx as success, GCE HTTP health checks accept exactly 200 and will
+          # not be configured otherwise
+          # (https://github.com/kubernetes/ingress-gce/issues/1768). A path that
+          # redirects passes one judge and fails the other, which is the whole shape
+          # of the failure: the pods read Ready, CI reads green, and the public
+          # surface serves Google's own 502 page. So the definition both can use is
+          # a 200 with nothing behind it — `/api/health`, which is what that path is
+          # in the frontend image: a Route Handler rather than a page, so no layout
+          # and no render, and outside `app/[locale]`, so neither locale redirects
+          # nor the `[locale]/[...all]` catch-all can claim it.
+          #
+          # It was `/en/login` until the frontend deleted the sign-in page and the
+          # path fell through to that catch-all (#158 in the frontend repository):
+          # a 307, an unhealthy NEG, and a 502 for every URL under that hostname.
+          # The path is therefore paired with `app/api/health/route.ts` over there —
+          # either repository moving it on its own reproduces the outage, and only a
+          # probe against the running image says so.
           readinessProbe:
             httpGet:
-              path: /en/login
+              path: /api/health
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
