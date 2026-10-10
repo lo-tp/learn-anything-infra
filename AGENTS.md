@@ -102,7 +102,14 @@ for changes that cannot touch the schema.
   crosses a migration is a fix-forward, not a revert.
 - **Image contracts are enforced by the cluster, not by review**: a numeric `USER`
   (`runAsNonRoot` is verified numerically), linux/amd64, and a dependency-free
-  readiness route. A Dockerfile that ignores them fails at pod start.
+  readiness route. A Dockerfile that ignores them fails at pod start. The
+  frontend's is `/api/health`, said in three places that must move together:
+  the readiness probe, the `frontend-health` BackendConfig (the load balancer's
+  own health check, declared rather than inferred — GKE derives it once at NEG
+  creation and never re-reads the probe), and `app/api/health/route.ts` in the
+  frontend repository. The asymmetry that bit: the kubelet accepts 2xx **and**
+  3xx, GCE HTTP health checks accept exactly 200, so a redirect answers one
+  judge and fails the other (#158).
 
 ## Working across the four repositories
 

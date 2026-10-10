@@ -49,15 +49,25 @@ What it took, none of it visible in a `kubectl get ingress`:
   **FrontendConfig** with `redirectToHttps.enabled: true`, attached by annotation;
   the redirect then appears on the target HTTP proxy (not in the URL map's path
   matchers, so checking there misleads you).
-- **BackendConfig health checks did not change what was built.** GKE generates the
-  load balancer's health check for a NEG **from the workload's readiness probe**
-  where it can — one backend's check says so in its description — and a default
-  connect check otherwise; three BackendConfigs, correctly annotated and present
-  before the balancer was created, left the generated checks as they were. They
-  are deleted here, and the probes are the honest single definition: the
-  frontend's readiness path is `/en/login` rather than `/` (the root is a
-  redirect; passing on a 307 proves a socket, not a page), and the sandbox's is
-  HTTP on a static page instead of TCP.
+- **The load balancer's health check is derived once, at NEG creation — and
+  afterwards only a BackendConfig moves it.** GKE generates the check for a NEG
+  **from the workload's readiness probe** where it can — one backend's check says
+  so in its description — and a default connect check otherwise. M6's three
+  BackendConfigs, correctly annotated and present before the balancer was created,
+  left the generated checks as they were, and the probes were the honest single
+  definition: the frontend's readiness path was `/en/login` rather than `/` (the
+  root is a redirect; passing on a 307 proves a socket, not a page), and the
+  sandbox's is HTTP on a static page instead of TCP.
+  Both clauses were found incomplete on 2026-10-09 (#158): the frontend deleted
+  its sign-in page, the probe moved to `/api/health`, and the check created on
+  2026-10-07 kept asking for `/en/login` — the probe is *not* the definition
+  after creation, which is how the pods read Ready while every URL 502'd. A
+  BackendConfig attached to the Service by port (`frontend-health`) updated the
+  existing check's `requestPath` within seconds. The definition is now declared
+  in the manifest rather than inferred: `frontend-health` in
+  `manifests/base/frontend.yaml`, paired with the readiness probe above it and
+  with `app/api/health/route.ts` in the frontend repository — three places that
+  are one fact about one URL.
 - **A woken tier answers 502 for 1–4 minutes after its pod is Ready.** The NEG
   attaches to the backend service after the endpoint exists. Twice observed (a
   rollout, then a scale-up), which is a fact for the scale-from-zero work still
