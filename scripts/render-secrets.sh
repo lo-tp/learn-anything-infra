@@ -47,15 +47,9 @@ declare -A TARGETS=(
   [database-env]="POSTGRES_PASSWORD=db-password PGPASSWORD=db-password"
   [sandbox-env]="SANDBOX_SERVICE_TOKEN=sandbox-service-token"
   [backend-env]="JWT_SECRET=jwt-secret OPENAI_API_KEY=openai-api-key SANDBOX_SERVICE_TOKEN=sandbox-service-token"
-  # The frontend needs exactly one secret: proxy.ts verifies the sign-in cookie with
-  # the same JWT signing key the backend issues it with, which is why it is the same
-  # Secret Manager entry and not a second one. Its NEXT_PUBLIC_* values are build
-  # arguments baked into the image, so they are deliberately absent here.
-  # The frontend needs exactly one secret: proxy.ts verifies the sign-in cookie with
-  # the same JWT signing key the backend issues it with, which is why it is the same
-  # Secret Manager entry and not a second one. Its NEXT_PUBLIC_* values are build
-  # arguments baked into the image, so they are deliberately absent here.
-  [frontend-env]="JWT_SECRET=jwt-secret"
+  # There is deliberately no frontend-env: the edge stopped verifying the sign-in
+  # cookie (frontend #149), so nothing in that container reads a token, and the
+  # cookie-signing key stays with the backend alone (infra #154).
 )
 
 # Pairs that are skipped when their entry is still empty, instead of failing the

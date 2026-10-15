@@ -117,8 +117,9 @@ deploy: ## the M5 order: migrate, apply, wait (ENV=prod|staging)
 # render-secrets.sh maps against the names gcp/app_secrets.tf creates — the two
 # lists live in one repository and can still disagree silently. `secret-hygiene`
 # proves no secret value appears in any of the four repositories or inside a
-# running image, and that JWT_SECRET and SANDBOX_SERVICE_TOKEN are one value each
-# across the pods that read them. Neither prints a value; both compare hashes.
+# running image, and that the shared values match: SANDBOX_SERVICE_TOKEN across
+# the two pods that read it, and the backend's JWT_SECRET against Secret Manager
+# (the frontend stopped reading it, #154). Neither prints a value; both compare hashes.
 secrets-check: ## do the Terraform secret names and the renderer's mapping agree?
 	$(AUTH) $(GCP_ENV) ./scripts/check-secret-names.sh
 

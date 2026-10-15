@@ -3,9 +3,13 @@
 #
 # Note what is *not* here: `NEXT_PUBLIC_*`. Those are inlined into the bundle at
 # build time, which is why the image is environment-specific (PLAN.md M2) and why
-# an environment's config cannot retarget a frontend that is already built. The
-# only runtime secret this container needs is the cookie-signing `JWT_SECRET`,
-# shared with the backend.
+# an environment's config cannot retarget a frontend that is already built.
+#
+# And no `envFrom` at all: the edge stopped verifying the sign-in cookie in the
+# frontend repository (#149), so nothing in this container reads a token any more,
+# and the cookie-signing `JWT_SECRET` belongs to the backend alone (infra #154).
+# Stopping the environment from providing what nothing reads is the point of the
+# cut — a secret a container holds but never uses is surface area for nothing.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,9 +40,6 @@ spec:
           ports:
             - name: http
               containerPort: 3000
-          envFrom:
-            - secretRef:
-                name: frontend-env
           resources:
             requests:
               cpu: 250m

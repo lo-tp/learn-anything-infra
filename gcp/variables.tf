@@ -50,7 +50,7 @@ variable "secrets" {
   EOT
   type        = list(string)
   default = [
-    "jwt-secret",            # shared by backend and frontend: one value
+    "jwt-secret",            # the backend's session-signing key: one value (the frontend stopped reading it, #154)
     "sandbox-service-token", # the Sandbox as a service principal (ADR: CONTEXT.md)
     "openai-api-key",
     "openai-base-url",

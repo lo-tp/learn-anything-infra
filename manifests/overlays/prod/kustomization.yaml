@@ -63,10 +63,13 @@ configMapGenerator:
   - name: backend-config
     literals:
       - FRONTEND_DOMAIN=https://learn.lotp.xyz
-      # The sign-in cookie is issued by api. and read by learn. (its proxy
-      # verifies the JWT with the shared JWT_SECRET), so it has to be written for
-      # the parent domain. Without this the app bounces a signed-in browser back to
-      # its own login page: core/security.cookie_policy in the backend.
+      # The sign-in cookie is issued by api. and read by learn., so it has to be
+      # written for the parent domain: the browser on learn. carries it back to
+      # the API, and the backend is the only reader now — the frontend's edge
+      # stopped verifying the cookie (frontend #149) and stopped receiving the
+      # signing secret with it (infra #154). Without this the app bounces a
+      # signed-in browser back to its own login page:
+      # core/security.cookie_policy in the backend.
       - COOKIE_DOMAIN=.lotp.xyz
       - SANDBOX_URL=http://sandbox.learn-anything.svc.cluster.local:80
       - LOG_LEVEL=INFO

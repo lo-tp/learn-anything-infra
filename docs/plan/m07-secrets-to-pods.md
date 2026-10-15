@@ -9,6 +9,12 @@ sandbox, one value, both ends fail secure), the DB credential, and
 `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `LLM_MODEL`. `PROMPTS_TOKEN` stays
 build-time only and never reaches a pod.
 
+**Amended (#154, 2026-10-15):** the frontend half of the `JWT_SECRET` pair is
+gone — the edge stopped verifying the cookie (frontend #149) and the deployment
+stopped providing the secret, so `JWT_SECRET` is the backend's alone, and the
+shared pair that must stay one value is `SANDBOX_SERVICE_TOKEN`. The Secret
+Manager entry `jwt-secret` is unchanged; it has one fewer reader.
+
 **Done when:** no secret value appears in this repo or in any image, and both
 shared pairs match across services (an `MISMATCH` here shows up as 401s from
 `/slides/{id}` and 401 sign-ins, so verify it in [M8](./m08-prove-it-then-let-it-use-the-real-llm.md)).

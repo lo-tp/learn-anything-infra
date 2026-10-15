@@ -9,11 +9,12 @@
 #      value. The images are built from working trees that could have had a
 #      committed `.env`, so "check the image you are running" is a stronger test
 #      than "check the Dockerfile".
-#   2. The shared pairs match. `JWT_SECRET` (backend and frontend) and
-#      `SANDBOX_SERVICE_TOKEN` (backend and sandbox) are one value each, read by
-#      two services. A mismatch is invisible at deploy time and appears later as
-#      401s at sign-in and at `/slides/{id}` — which is why this compares what the
-#      **running containers** hold, not what the manifest says.
+#   2. The shared values match. `SANDBOX_SERVICE_TOKEN` (backend and sandbox) is
+#      one value read by two services, and the backend's `JWT_SECRET` — the
+#      frontend stopped reading it (#154), so the backend is its only holder now —
+#      agrees with Secret Manager. A mismatch is invisible at deploy time and
+#      appears later as 401s at sign-in and at `/slides/{id}` — which is why this
+#      compares what the **running containers** hold, not what the manifest says.
 #
 # Nothing here prints a value. Everything compared is a hash, because a log line
 # with a secret in it is how a secret ends up in a log retention policy.
@@ -48,10 +49,17 @@ image_paths=(
   "sandbox|/app/.next /app/out /app/core"
 )
 
-# The pairs that must agree, and the workload that holds each half.
+# The pairs that must agree, and the workload that holds each half. `JWT_SECRET`
+# used to be one of them (backend and frontend); since the frontend stopped
+# reading it (#154) it is a single holder, checked against Secret Manager below.
 pairs=(
-  "JWT_SECRET|backend|frontend"
   "SANDBOX_SERVICE_TOKEN|backend|sandbox"
+)
+# Single holders: the key, the one workload that reads it, and the Secret Manager
+# entry it was rendered from. The check catches a render that drifted from the
+# entry it came out of (a rotation that never reached the pod).
+solo=(
+  "JWT_SECRET|backend|jwt-secret"
 )
 
 # Entries whose value belongs to a later milestone. `openai-api-key`,
@@ -107,7 +115,7 @@ for name in $(gcloud secrets list --project="$project" --format='value(name)' 2>
 done
 
 echo
-echo "2. The pairs that must be one value, compared as the containers hold them:"
+echo "2. The values that must be one, compared as the containers hold them:"
 # No associative arrays here: /bin/bash on macOS is 3.2, where `declare -A` is a
 # parse error, and this script has to run on the laptop it was written on.
 for pair in "${pairs[@]}"; do
@@ -134,10 +142,25 @@ for pair in "${pairs[@]}"; do
     fail=1
   fi
 done
+for entry in "${solo[@]}"; do
+  key="${entry%%|*}"; rest="${entry#*|}"; workload="${rest%%|*}"; secret="${rest#*|}"
+  pod="$(kubectl get pod -n "$ns" -l "app.kubernetes.io/name=$workload" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  if [ -z "$pod" ]; then echo "  $key / $workload: no pod running — cannot compare"; fail=1; continue; fi
+  value="$(kubectl exec -n "$ns" "$pod" -- printenv "$key" 2>/dev/null || true)"
+  if [ -z "$value" ]; then echo "  $key / $workload: not in the environment"; fail=1; continue; fi
+  actual="$(sha "$value")"
+  declared="$(sha "$(secret_value "$secret")")"
+  if [ -n "$declared" ] && [ "$declared" = "$actual" ]; then
+    echo "  $key: $workload == Secret Manager ($actual)"
+  else
+    echo "  $key: $workload is not what Secret Manager holds ($actual vs ${declared:-empty}) — an older render, or a rotation that never reached the pod"
+    fail=1
+  fi
+done
 
 echo
 if [ "$fail" = 0 ]; then
-  echo "clean: no value in a repository or an image, and both shared pairs match"
+  echo "clean: no value in a repository or an image, and the shared values match"
 else
   echo "see the lines above marked FOUND / BAKED / MISMATCH / EMPTY"
 fi

@@ -2,10 +2,14 @@
 # the database password: the generator, the version, and nothing written into a
 # file here.
 #
-# Both are shared between two of our own services, which is why generating them is
-# infrastructure's job — an operator inventing them by hand would produce two
-# secrets that have to match across a deploy, and a mismatch between the backend's
-# and the frontend's copy of a signing key is a login that never works.
+# Both exist so that a value one service holds and another must agree with is
+# generated once rather than invented twice: `sandbox-service-token` is read by
+# the backend and the sandbox, and a hand-written mismatch between the two is a
+# `/slides/{id}` that 401s. `jwt-secret` used to be shared the same way (backend
+# and frontend); since the frontend stopped verifying the cookie (#149) the
+# backend is its only reader, but it is still generated here — rotating it is the
+# one act that invalidates every signed-in browser, and that should stay a
+# deliberate act with a generated value behind it.
 #
 # `openai-api-key` and `prompts-token` are deliberately *not* here. They are
 # borrowed from outside this project (a vendor key, a repository token): Terraform
