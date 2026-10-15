@@ -72,6 +72,11 @@ sha() { printf '%s' "$1" | sha256sum | cut -c1-16; }
 secret_value() {
   gcloud secrets versions access latest --secret="$1" --project="$project" 2>/dev/null || true
 }
+# The first pod carrying the workload's name label, or empty when none is up
+# (a sleeping workload is a state, not a failure — the callers decide).
+pod_of() {
+  kubectl get pod -n "$ns" -l "app.kubernetes.io/name=$1" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true
+}
 
 echo "1. Every Secret Manager entry this project declares, and whether it is real:"
 for name in $(gcloud secrets list --project="$project" --format='value(name)' 2>/dev/null); do
@@ -102,7 +107,7 @@ for name in $(gcloud secrets list --project="$project" --format='value(name)' 2>
   echo "    images (the running ones, not the Dockerfiles):"
   for entry in "${image_paths[@]}"; do
     workload="${entry%%|*}"; paths="${entry#*|}"
-    pod="$(kubectl get pod -n "$ns" -l "app.kubernetes.io/name=$workload" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+    pod="$(pod_of "$workload")"
     if [ -z "$pod" ]; then echo "      $workload: no pod running, not checked"; continue; fi
     found="$(kubectl exec -n "$ns" "$pod" -- sh -c \
       "grep -rlF -- '$value' $paths 2>/dev/null | head -2" 2>/dev/null || true)"
@@ -123,7 +128,7 @@ for pair in "${pairs[@]}"; do
   a=""; b=""
   for side in left right; do
     workload="${!side}"
-    pod="$(kubectl get pod -n "$ns" -l "app.kubernetes.io/name=$workload" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+    pod="$(pod_of "$workload")"
     if [ -z "$pod" ]; then echo "  $key / $workload: no pod running — cannot compare"; fail=1; continue; fi
     value="$(kubectl exec -n "$ns" "$pod" -- printenv "$key" 2>/dev/null || true)"
     if [ -z "$value" ]; then echo "  $key / $workload: not in the environment"; fail=1; continue; fi
@@ -144,16 +149,18 @@ for pair in "${pairs[@]}"; do
 done
 for entry in "${solo[@]}"; do
   key="${entry%%|*}"; rest="${entry#*|}"; workload="${rest%%|*}"; secret="${rest#*|}"
-  pod="$(kubectl get pod -n "$ns" -l "app.kubernetes.io/name=$workload" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  pod="$(pod_of "$workload")"
   if [ -z "$pod" ]; then echo "  $key / $workload: no pod running — cannot compare"; fail=1; continue; fi
   value="$(kubectl exec -n "$ns" "$pod" -- printenv "$key" 2>/dev/null || true)"
   if [ -z "$value" ]; then echo "  $key / $workload: not in the environment"; fail=1; continue; fi
+  entry_value="$(secret_value "$secret")"
+  if [ -z "$entry_value" ]; then echo "  $key / $workload: Secret Manager entry '$secret' is empty — cannot compare"; fail=1; continue; fi
   actual="$(sha "$value")"
-  declared="$(sha "$(secret_value "$secret")")"
-  if [ -n "$declared" ] && [ "$declared" = "$actual" ]; then
+  declared="$(sha "$entry_value")"
+  if [ "$declared" = "$actual" ]; then
     echo "  $key: $workload == Secret Manager ($actual)"
   else
-    echo "  $key: $workload is not what Secret Manager holds ($actual vs ${declared:-empty}) — an older render, or a rotation that never reached the pod"
+    echo "  $key: $workload is not what Secret Manager holds ($actual vs $declared) — an older render, or a rotation that never reached the pod"
     fail=1
   fi
 done

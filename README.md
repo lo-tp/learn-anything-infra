@@ -99,7 +99,7 @@ runs:
 | `make dns-check` | Terraform, the live Ingress, what the registrar answers, and the certificate's actual SANs agree |
 | `make acceptance` | a real session completes through the public surface: register → login → plan → slides |
 | `make restore-drill` | the newest dump actually restores, and its table shapes match the live database |
-| `make secret-hygiene` | no secret value in any repo or running image, and shared pairs match across services by hash |
+| `make secret-hygiene` | no secret value in any repo or running image, and the shared values match by hash |
 
 ## Reading order
 

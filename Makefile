@@ -123,7 +123,7 @@ deploy: ## the M5 order: migrate, apply, wait (ENV=prod|staging)
 secrets-check: ## do the Terraform secret names and the renderer's mapping agree?
 	$(AUTH) $(GCP_ENV) ./scripts/check-secret-names.sh
 
-secret-hygiene: ## no secret in a repo or an image, and the shared pairs match
+secret-hygiene: ## no secret in a repo or an image, and the shared values match
 	$(kenv) PROJECT_ID=$(PROJECT_ID) ./scripts/secret-hygiene.sh $(NS)
 
 # What the registry now holds as published, written into the production overlay.

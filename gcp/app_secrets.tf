@@ -2,13 +2,12 @@
 # the database password: the generator, the version, and nothing written into a
 # file here.
 #
-# Both exist so that a value one service holds and another must agree with is
-# generated once rather than invented twice: `sandbox-service-token` is read by
-# the backend and the sandbox, and a hand-written mismatch between the two is a
-# `/slides/{id}` that 401s. `jwt-secret` used to be shared the same way (backend
-# and frontend); since the frontend stopped verifying the cookie (#149) the
-# backend is its only reader, but it is still generated here — rotating it is the
-# one act that invalidates every signed-in browser, and that should stay a
+# Why generated at all: `sandbox-service-token` is read by two services that must
+# hold the same value — a hand-written mismatch between the backend's and the
+# sandbox's copy is a `/slides/{id}` that 401s. `jwt-secret` has one reader now
+# (the backend; the frontend stopped verifying the cookie in #149), but it is
+# still generated rather than invented by an operator: rotating it is the one
+# act that invalidates every signed-in browser, and that should stay a
 # deliberate act with a generated value behind it.
 #
 # `openai-api-key` and `prompts-token` are deliberately *not* here. They are
