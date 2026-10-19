@@ -95,20 +95,65 @@ configMapGenerator:
       # connection to it. That is measured from inside a pod (M8's finding), not here.
       - OPENAI_BASE_URL=https://ws-ilvrl4nqmzl0yqu5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
       - LLM_MODEL=qwen3.8-flash
-      # The stage cap behind this morning's 500, raised to the value the local
-      # experiment used. Read as a mitigation with a date on it, not as a setting:
-      # `probe.generate_batch` asks for {reasoning_effort: low, max_tokens: 3072}
-      # (core/reasoning.py's table), and on this endpoint `low` is a steer rather
-      # than a ceiling — one call used 3070 completion tokens of which 3061 were
-      # reasoning, so the answer came out empty and the structured parse raised
-      # LengthFinishReasonError. Giving the stage room to finish thinking is the
-      # half that makes the session complete; the half that decides *how much it
-      # should be allowed to think* belongs in the backend's stage table, which is
-      # still measured against a llama.cpp server that is no longer in this path.
-      # One stage, not a global raise: the other stages' caps are untested at this
-      # endpoint, and a number applied to every call is a bill and a latency no one
-      # measured.
+      # --- Model-call budgets: the tuning table from the backend's local .env ---
+      #
+      # Copied as written, with the endpoint/key/model names excluded (those are
+      # above). What each line does is stated here because they are not the same
+      # kind of line: some restate what the code already defaults to, some change
+      # what production does on every call, and one is a dated mitigation for a
+      # failure this cluster actually had.
+      #
+      # The mitigation. `probe.generate_batch` asked for {reasoning_effort: low,
+      # max_tokens: 3072} (core/reasoning.py's table, measured against a llama.cpp
+      # server that is no longer in this path) and one call used 3070 completion
+      # tokens of which 3061 were reasoning: no content, and the structured parse
+      # raised LengthFinishReasonError at 50.5s. 65536 is the value the local
+      # experiment used; it fixed that phase (the next session ran five probe
+      # rounds clean) and the failure moved to `material.write_slide` at 4096, where
+      # a slide's own content overflowed. These caps are sized for a model that no
+      # longer answers here; the durable decision is the backend re-measuring its
+      # own stage table.
       - LLM_MAX_OUTPUT_TOKENS_PROBE_GENERATE_BATCH=65536
+      # Every *other* stage's output cap. Precedence is per-stage-first, so this
+      # raises clarify/plan/material to 8192 and leaves the probe stage at 65536.
+      - LLM_MAX_OUTPUT_TOKENS=8192
+      # What a call may think. The global `low` overrides the code table, which is
+      # the loud one here: that table deliberately puts the restating stages
+      # (generate_questions, refine_goal, the language helpers) at `minimal`, and
+      # `low` raises them — thinking where the app decided none was needed. The
+      # slide override below is the counterweight the local table carries with it.
+      - REASONING_EFFORT=low
+      - REASONING_EFFORT_MATERIAL_WRITE_SLIDE=minimal
+      # The client itself. Both numbers are what core/llm.py already defaults to
+      # (120s, 2 retries); declaring them states the ceiling production runs with,
+      # which is worth more than the no-op. The balancer's ceiling is separate:
+      # manifests/base/backend-config.yaml, 600s.
+      - LLM_REQUEST_TIMEOUT_SECONDS=120
+      - LLM_MAX_RETRIES=2
+      # How a call decodes. Today every stage except the slide ladder sends no
+      # sampling parameters at all, so these change behaviour, not just
+      # configuration: clarify/probe/plan stages that inherited the provider's own
+      # defaults now get 0.7 with top_k 40, min_p 0.05, repeat_penalty 1.05. Two
+      # honest caveats: the values were chosen against llama.cpp, and top_k/min_p/
+      # repeat_penalty travel in `extra_body`, which this endpoint accepts but which
+      # it may ignore — a knob that looks configured and is not honoured is the
+      # quieter failure. `evaluate_batch` is pinned at 0.2 because a stage that
+      # grades answers should not decode at 0.7.
+      - LLM_TEMPERATURE=0.7
+      - LLM_TOP_P=0.8
+      - LLM_TOP_K=40
+      - LLM_MIN_P=0.05
+      - LLM_REPEAT_PENALTY=1.05
+      - LLM_PRESENCE_PENALTY=0.0
+      - LLM_FREQUENCY_PENALTY=0.0
+      # The slide ladder, written out. These two restate the table in
+      # graphs/material/sandbox.py exactly (0.4/0.2/0.1 with top_k 25/15/10), and
+      # they have to be stated: a global sampling value beats a stage's own
+      # code-stated ladder, so without them the deck's attempts would flatten to
+      # 0.7. The 0.2 line is the same reasoning for the grading stage.
+      - LLM_TEMPERATURE_MATERIAL_WRITE_SLIDE=0.4,0.2,0.1
+      - LLM_TOP_K_MATERIAL_WRITE_SLIDE=25,15,10
+      - LLM_TEMPERATURE_PROBE_EVALUATE_BATCH=0.2
 
   # Consumed by the sandbox only. `NEXT_PUBLIC_BACKEND_URL` looks like a
   # build-time name but is read server-side here (the /slides route fetches the

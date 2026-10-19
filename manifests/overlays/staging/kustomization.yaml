@@ -40,10 +40,28 @@ configMapGenerator:
       # until someone wakes it to test the wiring.
       - OPENAI_BASE_URL=https://ws-ilvrl4nqmzl0yqu5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
       - LLM_MODEL=qwen3.8-flash
-      # Including the raised probe stage cap, so this overlay asks the same model
-      # with the same budget as production (see the note in overlays/prod). Staging
-      # is asleep; these lines cost nothing until someone wakes it to test the wiring.
+      # The same model, the same budgets, the same decode — the full table from
+      # overlays/prod, copied rather than paraphrased. A staging that asks a
+      # different model with different caps measures a different system, and the
+      # whole point of having the overlay is to test the wiring against the thing
+      # production runs. Staging is asleep (see the patches above), so none of this
+      # costs anything until someone wakes it.
       - LLM_MAX_OUTPUT_TOKENS_PROBE_GENERATE_BATCH=65536
+      - LLM_MAX_OUTPUT_TOKENS=8192
+      - REASONING_EFFORT=low
+      - REASONING_EFFORT_MATERIAL_WRITE_SLIDE=minimal
+      - LLM_REQUEST_TIMEOUT_SECONDS=120
+      - LLM_MAX_RETRIES=2
+      - LLM_TEMPERATURE=0.7
+      - LLM_TOP_P=0.8
+      - LLM_TOP_K=40
+      - LLM_MIN_P=0.05
+      - LLM_REPEAT_PENALTY=1.05
+      - LLM_PRESENCE_PENALTY=0.0
+      - LLM_FREQUENCY_PENALTY=0.0
+      - LLM_TEMPERATURE_MATERIAL_WRITE_SLIDE=0.4,0.2,0.1
+      - LLM_TOP_K_MATERIAL_WRITE_SLIDE=25,15,10
+      - LLM_TEMPERATURE_PROBE_EVALUATE_BATCH=0.2
 
   # `ALLOWED_FRAME_ANCESTORS` is absent on purpose: with no public origin there is
   # nothing to allow, and the sandbox fails secure to `self` when the value is
