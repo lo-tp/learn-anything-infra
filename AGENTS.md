@@ -45,6 +45,16 @@ reads and that backfills nothing.
   apply leaves the cluster real, outside state, and a stale lock in the state
   bucket: `terraform force-unlock <id>`, then `terraform import`, then apply. The
   findings are in [M1](./docs/plan/m01-terraform-foundation.md).
+- **Never deploy from a checkout that is behind `origin/main`.** The pipeline pins and
+  deploys on its own, so a laptop that has not pulled names an image older than the one
+  that last migrated the database — and migrations are forward-only. The gate then fails
+  with `Can't locate revision '<id>'`: alembic reading a stamp written by newer code.
+  It looks like a broken migration and is a stale pin; `git pull --ff-only` first.
+  `make release-check` has the same failure of interpretation — on a lagging checkout it
+  reports CI's own shipping as drift, saying "newer images exist" about images the
+  cluster already runs. Pull before acting on that too, and ask `kubectl diff -k
+  manifests/overlays/prod` when the question is what the cluster *runs* rather than what
+  a deploy would name.
 - **Never edit `blog.lotp.xyz`.** It is a *foreign record*
   ([CONTEXT.md](./CONTEXT.md)); read it, preserve it.
 - **An unreachable hostname is a DNS or certificate question before it is a code
