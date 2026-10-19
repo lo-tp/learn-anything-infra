@@ -38,7 +38,7 @@ images:
   - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-backend
     # The cookie-scope fix (core/security.cookie_policy) rides with the ingress:
     # a shared-domain cookie is only observable once two hosts are actually served.
-    digest: sha256:247f175e3420612352e0845c43ff5f53b7b457615663fb2305c38b51a0230563  # sha-c531cd4c2b16fb0fbd3106e817c5ec6dc217f9aa (CI, c531cd4c), built 2026-10-18
+    digest: sha256:6a9029378c4d41da5851a19cbaf9c1b9afe07ed8df751db874a09de5dc575830  # sha-2837f9341cd1b934e41ccb499b320a2983b3d4b2 (CI, 2837f934), built 2026-10-19
   # The frontend and sandbox images come from their own repositories' Actions runs.
   # Their workflows' smoke steps are the gate that matters for these two: the
   # frontend must redirect an anonymous visitor and render a page whose text comes
