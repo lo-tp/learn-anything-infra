@@ -95,6 +95,20 @@ configMapGenerator:
       # connection to it. That is measured from inside a pod (M8's finding), not here.
       - OPENAI_BASE_URL=https://ws-ilvrl4nqmzl0yqu5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
       - LLM_MODEL=qwen3.8-flash
+      # The stage cap behind this morning's 500, raised to the value the local
+      # experiment used. Read as a mitigation with a date on it, not as a setting:
+      # `probe.generate_batch` asks for {reasoning_effort: low, max_tokens: 3072}
+      # (core/reasoning.py's table), and on this endpoint `low` is a steer rather
+      # than a ceiling — one call used 3070 completion tokens of which 3061 were
+      # reasoning, so the answer came out empty and the structured parse raised
+      # LengthFinishReasonError. Giving the stage room to finish thinking is the
+      # half that makes the session complete; the half that decides *how much it
+      # should be allowed to think* belongs in the backend's stage table, which is
+      # still measured against a llama.cpp server that is no longer in this path.
+      # One stage, not a global raise: the other stages' caps are untested at this
+      # endpoint, and a number applied to every call is a bill and a latency no one
+      # measured.
+      - LLM_MAX_OUTPUT_TOKENS_PROBE_GENERATE_BATCH=65536
 
   # Consumed by the sandbox only. `NEXT_PUBLIC_BACKEND_URL` looks like a
   # build-time name but is read server-side here (the /slides route fetches the

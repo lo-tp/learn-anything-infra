@@ -40,6 +40,10 @@ configMapGenerator:
       # until someone wakes it to test the wiring.
       - OPENAI_BASE_URL=https://ws-ilvrl4nqmzl0yqu5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
       - LLM_MODEL=qwen3.8-flash
+      # Including the raised probe stage cap, so this overlay asks the same model
+      # with the same budget as production (see the note in overlays/prod). Staging
+      # is asleep; these lines cost nothing until someone wakes it to test the wiring.
+      - LLM_MAX_OUTPUT_TOKENS_PROBE_GENERATE_BATCH=65536
 
   # `ALLOWED_FRAME_ANCESTORS` is absent on purpose: with no public origin there is
   # nothing to allow, and the sandbox fails secure to `self` when the value is
