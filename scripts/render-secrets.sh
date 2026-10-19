@@ -52,14 +52,15 @@ declare -A TARGETS=(
   # cookie-signing key stays with the backend alone (infra #154).
 )
 
-# Pairs that are skipped when their entry is still empty, instead of failing the
-# render. `openai-base-url` and `llm-model` are declared by Terraform now and
-# filled at M8, when the real LLM is switched on; a deploy before then should not
-# invent an empty `OPENAI_BASE_URL=`, because the backend reads an empty string as
-# "use the configured value" and passes it to the client, which is a worse failure
-# than the variable being unset.
-OPTIONAL_TARGETS=(backend-env)
-OPTIONAL_pairs="OPENAI_BASE_URL=openai-base-url LLM_MODEL=llm-model"
+# Everything in the table above is required, and an entry that is still empty fails
+# the render rather than being skipped. That used to not be true: `OPENAI_BASE_URL`
+# and `LLM_MODEL` were optional here because their entries were empty by design until
+# M8 supplied a real endpoint, and rendering `OPENAI_BASE_URL=` was worse than not
+# rendering it at all — the backend hands an empty string to the client, which is a
+# failure with no name. What is left in Secret Manager is material a pod cannot do its
+# job without. The LLM endpoint and the model name are configuration, not credentials,
+# and they live in the overlay's ConfigMap instead
+# (manifests/overlays/prod/kustomization.yaml, backend-config).
 
 # The backend wants one URL, `DATABASE_URL`, and names no driver in it: the app
 # rewrites a driver-less `postgresql://` URL to psycopg3 itself
@@ -98,20 +99,13 @@ for target in "${targets[@]}"; do
   [ -n "$mapping" ] || { echo "unknown target: $target" >&2; usage; }
 
   literal_args=()
-  pairs_for_target="$mapping"
-  for t in "${OPTIONAL_TARGETS[@]}"; do
-    [ "$t" = "$target" ] && pairs_for_target="$mapping $OPTIONAL_pairs"
-  done
-  for pair in $pairs_for_target; do
+  for pair in $mapping; do
     key="${pair%%=*}"; secret="${pair#*=}"
     # `|| true` because a Secret Manager entry with an empty payload makes gcloud
-    # exit non-zero, and `set -e` would end the script before the branch below can
-    # say which kind of empty this is.
+    # exit non-zero, and `set -e` would end the script before the line below can
+    # name the entry whose value is missing.
     value="$(read_secret "$secret" || true)"
     if [ -z "$value" ]; then
-      case " $OPTIONAL_pairs " in
-        *" $pair "*) echo "note: skipping $key — Secret Manager entry '$secret' is empty (supplied at M8)" >&2; continue ;;
-      esac
       echo "refusing to render $target: Secret Manager entry '$secret' is empty" >&2
       exit 1
     fi

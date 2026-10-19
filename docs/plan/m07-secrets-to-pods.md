@@ -107,3 +107,10 @@ Deferred to M8 by design: `openai-api-key` still holds its placeholder and
 is exercised; the values are the human step at the start of M8, after which
 `make secret-hygiene` is re-run — the pair checks are the part M8's own
 "Done when" depends on.
+
+**Amended 2026-10-19, when M8 took the values.** `openai-api-key` is real, and the
+other two no longer exist as Secret Manager entries: an endpoint and a model name are
+configuration, so they moved to `manifests/overlays/prod/kustomization.yaml`'s
+`backend-config` and the "skipped while empty" special case above was deleted rather
+than left behind for a pair it no longer describes. An empty entry failing the render
+is the right behaviour for everything that is left in that table.

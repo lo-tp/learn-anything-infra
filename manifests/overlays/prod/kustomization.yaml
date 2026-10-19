@@ -73,6 +73,28 @@ configMapGenerator:
       - COOKIE_DOMAIN=.lotp.xyz
       - SANDBOX_URL=http://sandbox.learn-anything.svc.cluster.local:80
       - LOG_LEVEL=INFO
+      # Which model production asks, and at which address. These two are here rather
+      # than in Secret Manager because neither is a credential: an endpoint and a
+      # model name are configuration, and configuration in this repository is declared
+      # here, reviewed as `git diff` of this block, and applied by CI — the same
+      # treatment the origins above get. In Secret Manager they had cost three things:
+      # a "skip it while empty" special case in scripts/render-secrets.sh, a name in
+      # scripts/secret-hygiene.sh's not-yet-filled list, and no way for a review to
+      # see what production asks a model to be. The endpoint is not a secret either:
+      # it carries a workspace id, not a bearer token, and reading the manifest gets
+      # you no spend. The one name that stays in Secret Manager is `openai-api-key`,
+      # a borrowed vendor credential whose entry is Terraform's and whose value is a
+      # person's (gcp/secrets.tf, gcp/app_secrets.tf).
+      #
+      # A change here changes the ConfigMap's content hash, so the pod template
+      # changes and the Deployment rolls on the next apply. That is not true of a
+      # rendered Secret, which reaches a pod only when the pod is replaced.
+      #
+      # The one thing this file cannot assert is reachability: a hostname in a
+      # ConfigMap says nothing about whether a pod in asia-east2 can open a
+      # connection to it. That is measured from inside a pod (M8's finding), not here.
+      - OPENAI_BASE_URL=https://ws-ilvrl4nqmzl0yqu5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      - LLM_MODEL=qwen3.8-flash
 
   # Consumed by the sandbox only. `NEXT_PUBLIC_BACKEND_URL` looks like a
   # build-time name but is read server-side here (the /slides route fetches the

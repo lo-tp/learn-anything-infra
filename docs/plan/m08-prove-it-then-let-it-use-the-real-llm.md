@@ -48,13 +48,35 @@ failure a result rather than a crash).
   than remembered:** the cookie is set by `/auth/login`, not by
   `/auth/register` (the frontend makes both calls); and pydantic's email validator
   rejects a `.invalid` address, so the throwaway learner uses `example.com`.
-- **What M8 still needs from you, and it cannot be derived from this repo: which
+- **What M8 needed from you at the time, and what could not be derived from this
+  repo: which
   endpoint.** The backend's local `.env` points at `http://192.168.200.54:1919/v1`
   with model `qwen3.8-flash-next-iq3_xxs` — a machine on your LAN, unreachable
   from a VPC in `asia-east2`. Whatever production uses has to be reachable from
   the cluster (now possible, via NAT) and is three Secret Manager values:
   `openai-api-key`, `openai-base-url`, `llm-model`. Render's values are not in
   `render.yaml` (`sync: false`), so the dashboard is the only place they exist.
+- **The endpoint arrived (2026-10-19), and it split into two kinds.** `openai-api-key`
+  now holds a real vendor key — Secret Manager version 2, with the placeholder left
+  behind as version 1, which is what `latest` no longer reads. The endpoint is an
+  Aliyun Model Studio OpenAI-compatible base URL with model `qwen3.8-flash`, and **it
+  is not in Secret Manager**: an endpoint and a model name are configuration, not
+  credentials, so they are literals in
+  `manifests/overlays/prod/kustomization.yaml` (`backend-config`) — reviewable as a
+  `git diff`, applied by CI, and content-hashed, so the next apply rolls the
+  Deployment without a re-render step. The two empty Secret Manager entries came out of
+  `var.secrets` and the renderer's optional-pairs hack went with them;
+  `make secrets-check` is what keeps the two lists honest. Not tidiness: with the
+  endpoint in a manifest, a reviewer can see what production asks a model to be, and
+  there is one place that says it.
+- **What that change does not claim: reachability.** Nothing in a ConfigMap says a pod
+  in `asia-east2` can open a TCP connection to `*.maas.aliyuncs.com`, and this
+  milestone has already been fooled once by assuming an endpoint was reachable. Measure
+  it from inside a pod before reading a failure as the app's. Worth measuring rather
+  than assuming, too: `core/sampling.py` records that `top_k`, `min_p` and
+  `repeat_penalty` travel in `extra_body`, and that the llama.cpp server silently
+  ignored parameters it did not implement — a server that *rejects* them instead shows
+  up as a failed call in the slide-writing ladder, not as a missing knob.
 - **No token instrumentation, decided rather than omitted (2026-10-08).** The
   backend constructs `ChatOpenAI` in `core/llm.py` and nothing downstream keeps
   `usage_metadata`, so tokens-per-session is not measurable inside the app today —

@@ -33,6 +33,13 @@ configMapGenerator:
       - FRONTEND_DOMAIN=http://frontend.staging.svc.cluster.local:80
       - SANDBOX_URL=http://sandbox.staging.svc.cluster.local:80
       - LOG_LEVEL=DEBUG
+      # The same model and endpoint as production, deliberately. There is one LLM
+      # here (ADR 0006: one environment until the second is priced), and a staging
+      # that asked a different model would make "the wiring works in staging" a claim
+      # about a different system. It sleeps (the patches above), so this costs nothing
+      # until someone wakes it to test the wiring.
+      - OPENAI_BASE_URL=https://ws-ilvrl4nqmzl0yqu5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      - LLM_MODEL=qwen3.8-flash
 
   # `ALLOWED_FRAME_ANCESTORS` is absent on purpose: with no public origin there is
   # nothing to allow, and the sandbox fails secure to `self` when the value is

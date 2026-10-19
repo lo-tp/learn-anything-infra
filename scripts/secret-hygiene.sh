@@ -62,10 +62,14 @@ solo=(
   "JWT_SECRET|backend|jwt-secret"
 )
 
-# Entries whose value belongs to a later milestone. `openai-api-key`,
-# `openai-base-url` and `llm-model` are declared now (M1) and filled at M8, when
-# the real LLM is switched on; everything else must be real today.
-expected_later=(openai-api-key openai-base-url llm-model)
+# Names whose value is knowingly not supplied yet — everything else must be real
+# today. `openai-api-key` was here until M8 put a real vendor key in it, and
+# `openai-base-url` / `llm-model` left this list at the same time by leaving Secret
+# Manager: an endpoint and a model name are configuration, declared in
+# manifests/overlays/prod/kustomization.yaml where a `git diff` is the review.
+# Written as a string, not an array: an empty list has to be a legal value, and
+# `"${arr[@]}"` under `set -u` is not on bash 3.2 (see the `declare -A` note above).
+expected_later=""
 
 fail=0
 sha() { printf '%s' "$1" | sha256sum | cut -c1-16; }
@@ -82,7 +86,7 @@ echo "1. Every Secret Manager entry this project declares, and whether it is rea
 for name in $(gcloud secrets list --project="$project" --format='value(name)' 2>/dev/null); do
   value="$(secret_value "$name")"
   later=0
-  for l in "${expected_later[@]}"; do [ "$name" = "$l" ] && later=1; done
+  for l in $expected_later; do [ "$name" = "$l" ] && later=1; done
   case "$value" in
     "" )
       if [ "$later" = 1 ]; then echo "  $name: empty, supplied at M8"; continue; fi

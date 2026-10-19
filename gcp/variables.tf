@@ -53,10 +53,18 @@ variable "secrets" {
     "jwt-secret",            # the backend's session-signing key: one value (the frontend stopped reading it, #154)
     "sandbox-service-token", # the Sandbox as a service principal (ADR: CONTEXT.md)
     "openai-api-key",
-    "openai-base-url",
-    "llm-model",
     "db-password",
   ]
+  # What is *not* in this list is a decision, not an omission. `openai-base-url` and
+  # `llm-model` were here and are gone: an endpoint and a model name are
+  # configuration rather than credentials, so they belong in the overlay that declares
+  # what production runs (manifests/overlays/prod/kustomization.yaml, backend-config)
+  # where a `git diff` is the review and a content hash does the rolling. Keeping
+  # them here meant Terraform owning a thing it had no opinion about, plus the two
+  # special cases scripts/render-secrets.sh needed to render them while empty. They
+  # held no value when this was removed, so destroying those two entries loses
+  # nothing; the key that stays is a *borrowed* credential — Terraform creates the
+  # entry, a person supplies the value (gcp/secrets.tf, gcp/app_secrets.tf).
 }
 
 variable "monthly_platform_budget_usd" {

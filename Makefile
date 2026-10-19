@@ -138,6 +138,14 @@ pin-images: ## pin production to the newest published images by hand (CI does th
 # what disagrees — the same comparison the pipeline makes, run against the file rather
 # than the cluster, because the file is what decides what runs.
 #
+# Read that answer after `git fetch`: on a checkout that lags origin/main it prints
+# CI's own shipping as drift. The pipeline pins and deploys on its own, so a laptop
+# that has not pulled can be told "newer images exist" about images the cluster is
+# already running. `git pull --ff-only` before acting on a yes, and `kubectl diff -k
+# manifests/overlays/prod` when the question is what the cluster runs rather than what
+# a deploy would name — those two questions have different answers and only one of
+# them is asked here.
+#
 # The empty-pid branch is not decoration. My first version of this target reported
 # "newer images exist" when the project id had failed to resolve and the script had
 # merely errored — a failure to ask, printed as an answer. A question that cannot be
