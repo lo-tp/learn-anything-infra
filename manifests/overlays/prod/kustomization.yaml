@@ -115,8 +115,8 @@ configMapGenerator:
       # own stage table.
       - LLM_MAX_OUTPUT_TOKENS_PROBE_GENERATE_BATCH=65536
       # Every *other* stage's output cap. Precedence is per-stage-first, so this
-      # raises clarify/plan/material to 8192 and leaves the probe stage at 65536.
-      - LLM_MAX_OUTPUT_TOKENS=8192
+      # raises clarify/plan/material to 10240 and leaves the probe stage at 65536.
+      - LLM_MAX_OUTPUT_TOKENS=10240
       # What a call may think. The global `low` overrides the code table, which is
       # the loud one here: that table deliberately puts the restating stages
       # (generate_questions, refine_goal, the language helpers) at `minimal`, and
