@@ -39,7 +39,7 @@ configMapGenerator:
       # about a different system. It sleeps (the patches above), so this costs nothing
       # until someone wakes it to test the wiring.
       - OPENAI_BASE_URL=https://ws-ilvrl4nqmzl0yqu5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-      - LLM_MODEL=qwen3.8-flash
+      - LLM_MODEL=qwen3.8-max-0902
       # The same model, the same budgets, the same decode — the full table from
       # overlays/prod, copied rather than paraphrased. A staging that asks a
       # different model with different caps measures a different system, and the

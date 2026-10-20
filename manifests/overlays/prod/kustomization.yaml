@@ -94,7 +94,7 @@ configMapGenerator:
       # ConfigMap says nothing about whether a pod in asia-east2 can open a
       # connection to it. That is measured from inside a pod (M8's finding), not here.
       - OPENAI_BASE_URL=https://ws-ilvrl4nqmzl0yqu5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-      - LLM_MODEL=qwen3.8-flash
+      - LLM_MODEL=qwen3.8-max-0902
       # --- Model-call budgets: the tuning table from the backend's local .env ---
       #
       # Copied as written, with the endpoint/key/model names excluded (those are
