@@ -50,7 +50,7 @@ images:
   # render would keep the `:placeholder` (which is what the first version of these
   # two entries did, and the deploy reported no change at all).
   - name: asia-east2-docker.pkg.dev/learn-anything-510905/learn-anything/learn-anything-frontend
-    digest: sha256:53f9bfa37bc8c5492bcffa95a7b3d4875c68ed4d3777d0f2df66cd30abcb4553  # sha-2075451442844ab2fb1ef79b20bbbca31728ff59 (CI, 20754514), built 2026-10-20
+    digest: sha256:544c9d7794a7a1c8c6ed9805898002676fe794cc8bded0e086ca501c6d4c66f4  # sha-af76a655dcfe7f569a04c04db0a91935e7fe4960 (CI, af76a655), built 2026-10-22
     # No `newApiBase` override anywhere: see manifests/base/frontend.yaml. Pointing
     # the browser at a staging surface is a new image built with that origin, not a
     # manifest change.
